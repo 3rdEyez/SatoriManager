@@ -4,10 +4,13 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QString>
 #include "app_environment.h"
 #include "import_qml_components_plugins.h"
 #include "import_qml_plugins.h"
-#include "MobileClient.h"
+#include "mobileclient.h"
+
+using namespace Qt::Literals::StringLiterals;
 
 int main(int argc, char *argv[])
 {
@@ -21,7 +24,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("mobileClient", &mobileClient);
 
-    const QUrl url(u"qrc:/qt/qml/Main/main.qml"_qs);
+    const QUrl url(u"qrc:/qt/qml/Main/main.qml"_s);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreated,

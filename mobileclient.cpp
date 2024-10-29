@@ -1,4 +1,4 @@
-#include "MobileClient.h"
+#include "mobileclient.h"
 #include <QHostAddress>
 #include <QDebug>
 #include <QNetworkDatagram>
@@ -104,6 +104,7 @@ void MobileClient::processPendingDatagrams()
 
 void MobileClient::findServer()
 {
+    qDebug() << "Trying to find server...";
     QByteArray discoveryMessage = "SatoriEye_DISCOVERY_REQUEST";               // 特定的发现消息
     udpSocket->writeDatagram(discoveryMessage, QHostAddress::LocalHost, 8888); // 广播到特定端口
 }
