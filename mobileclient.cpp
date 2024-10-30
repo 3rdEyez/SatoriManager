@@ -8,6 +8,10 @@ MobileClient::MobileClient(QObject *parent) : QObject(parent)
     udpSocket = new QUdpSocket(this);
     setMode(MobileClient::EyeMode::Unconnected);
 
+    currentCH1 = 1500;
+    currentCH2 = 1500;
+    currentCH3 = 1500;
+
     // 绑定 UDP 套接字
     udpSocket->bind(QHostAddress::Any, 8889);
     connect(udpSocket, &QUdpSocket::readyRead, this, &MobileClient::processPendingDatagrams);
@@ -167,30 +171,36 @@ QString MobileClient::generateModeCommand(MobileClient::EyeMode serverMode)
 
 void MobileClient::lookUp()
 {
-    sendCommand("MANUAL:MOVE_UP");
-    qDebug() << "Sent command to move up";
+    currentCH2 = qMin(2500, currentCH2 + Increment); // 向上增加角度
+    QString message = generatePwmControlMessage(currentCH1, currentCH2, currentCH3);
+    sendCommand(message);
+    qDebug() << "Sent command to look up with message:" << message;
 }
 
 void MobileClient::lookDown()
 {
-    sendCommand("MANUAL:MOVE_DOWN");
-    qDebug() << "Sent command to move down";
+    currentCH2 = qMax(500, currentCH2 - Increment); // 向下减少角度
+    QString message = generatePwmControlMessage(currentCH1, currentCH2, currentCH3);
+    sendCommand(message);
+    qDebug() << "Sent command to look down with message:" << message;
 }
 
 void MobileClient::lookLeft()
 {
-    sendCommand("MANUAL:ROTATE_LEFT");
-    qDebug() << "Sent command to rotate left";
+    currentCH1 = qMax(500, currentCH1 - Increment); // 向左旋转
+    QString message = generatePwmControlMessage(currentCH1, currentCH2, currentCH3);
+    sendCommand(message);
+    qDebug() << "Sent command to look left with message:" << message;
 }
 
 void MobileClient::lookRight()
 {
-    sendCommand("MANUAL:ROTATE_RIGHT");
-    qDebug() << "Sent command to rotate right";
+    currentCH1 = qMin(2500, currentCH1 + Increment); // 向右旋转
+    QString message = generatePwmControlMessage(currentCH1, currentCH2, currentCH3);
+    sendCommand(message);
+    qDebug() << "Sent command to look right with message:" << message;
 }
 
-void MobileClient::wink()
-{
-    sendCommand("MANUAL:WINK");
-    qDebug() << "Sent command to wink";
+QString MobileClient::generatePwmControlMessage(int ch1, int ch2, int ch3) {
+    return QString("CH1:%1CH2:%2CH3:%3").arg(ch1).arg(ch2).arg(ch3);
 }

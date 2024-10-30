@@ -49,6 +49,7 @@ private slots:
 private:
     MobileClient::EyeMode parseModeString(const QString &modeString); // 将字符串解析为 EyeMode 枚举
     QString generateModeCommand(MobileClient::EyeMode serverMode);    // 生成模式切换的命令字符串
+    QString generatePwmControlMessage(int ch1, int ch2, int ch3);
 
     MobileClient::EyeMode m_mode; // 当前客户端模式
     QUdpSocket *udpSocket;        // 用于通信的 UDP 套接字
@@ -57,6 +58,12 @@ private:
 
     QTimer *heartbeatTimer; // 用于周期性发送心跳消息的计时器
     int heartbeatTimeout;   // 记录连续心跳超时的次数
+
+    int currentCH1; // 眼球左右位置
+    int currentCH2; // 眼球上下位置
+    int currentCH3; // 上眼皮上下位置
+    const int Increment = 100; // 每次旋转的角度增量
+
 };
 
 #endif // MOBILECLIENT_H
