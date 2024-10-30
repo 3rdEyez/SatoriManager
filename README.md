@@ -37,19 +37,6 @@ cd SatoriManager
 确保服务器和客户端处于同一局域网，以便能够自动发现服务器。
 
 ### 项目目录结构
-```
-SatoriManager/
-├── src/                     # 源代码文件
-│   ├── MobileClient.h       # 客户端核心类定义
-│   ├── MobileClient.cpp     # 客户端核心类实现
-│   ├── main.cpp             # 程序入口
-│   └── ...                  # 其他源代码文件
-├── qml/                     # QML UI 文件
-│   ├── main.qml             # 主界面
-│   └── ...                  # 其他 UI 相关文件
-├── resources/               # 资源文件（图标、图片等）
-└── README.md                # 项目说明文件
-```
 
 
 ## 使用说明
