@@ -200,7 +200,11 @@ void MobileClient::lookRight()
     sendCommand(message);
     qDebug() << "Sent command to look right with message:" << message;
 }
-
+void MobileClient::wink()
+{
+    sendCommand("WINK");
+    qDebug() << "Sent command to wink";
+}
 QString MobileClient::generatePwmControlMessage(int ch1, int ch2, int ch3) {
     return QString("CH1:%1CH2:%2CH3:%3").arg(ch1).arg(ch2).arg(ch3);
 }
