@@ -4,15 +4,21 @@
 #include <QObject>
 #include <QUdpSocket>
 #include <QTimer>
+#include <qqmlintegration.h>
 
 class MobileClient : public QObject
 {
     Q_OBJECT
-
+    QML_ELEMENT
+    QML_SINGLETON
     Q_PROPERTY(EyeMode mode READ mode WRITE setMode NOTIFY modeChanged)
 
 public:
     explicit MobileClient(QObject *parent = nullptr);
+
+    // 获取 MobileClient 的单例实例
+    static MobileClient* instance();
+
     // 枚举类：定义客户端的连接模式
     enum class EyeMode : int
     {
@@ -46,6 +52,7 @@ private slots:
     void checkConnection();                      // 通过发送心跳包检查连接状态
     void setMode(MobileClient::EyeMode newMode); // 更新本地模式状态
     void sendCommand(const QString &command);    // 向机器人服务器发送指令
+
 private:
     MobileClient::EyeMode parseModeString(const QString &modeString); // 将字符串解析为 EyeMode 枚举
     QString generateModeCommand(MobileClient::EyeMode serverMode);    // 生成模式切换的命令字符串
@@ -63,7 +70,6 @@ private:
     int currentCH2; // 眼球上下位置
     int currentCH3; // 上眼皮上下位置
     const int Increment = 100; // 每次旋转的角度增量
-
 };
 
 #endif // MOBILECLIENT_H

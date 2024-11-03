@@ -3,7 +3,13 @@
 #include <QDebug>
 #include <QNetworkDatagram>
 
-MobileClient::MobileClient(QObject *parent) : QObject(parent)
+MobileClient::MobileClient(QObject *parent) : QObject(parent),
+    udpSocket(new QUdpSocket(this)),
+    heartbeatTimer(new QTimer(this)),
+    m_mode(EyeMode::Unconnected),
+    currentCH1(1500), // 默认值
+    currentCH2(1500), // 默认值
+    currentCH3(1500)  // 默认值
 {
     udpSocket = new QUdpSocket(this);
     setMode(MobileClient::EyeMode::Unconnected);
@@ -28,6 +34,11 @@ MobileClient::MobileClient(QObject *parent) : QObject(parent)
 MobileClient::EyeMode MobileClient::mode() const
 {
     return m_mode;
+}
+
+MobileClient* MobileClient::instance() {
+    static MobileClient instance;
+    return &instance;
 }
 
 void MobileClient::setMode(MobileClient::EyeMode newMode)
@@ -80,7 +91,7 @@ void MobileClient::processPendingDatagrams()
         // 处理消息
         if (message=="SatoriEye_DISCOVERY_RESPONSE")
         {
-            robotIp = datagram.senderAddress().toString();                                 // 提取 IP
+            robotIp = datagram.senderAddress().toString(); // 提取 IP
             robotPort = datagram.senderPort(); // 提取端口
             qDebug() << "Robot server found at:" << robotIp << ":" << robotPort;
             setMode(MobileClient::EyeMode::Auto);

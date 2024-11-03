@@ -17,12 +17,16 @@ int main(int argc, char *argv[])
     set_qt_environment();
 
     QGuiApplication app(argc, argv);
-    qmlRegisterType<MobileClient>("SatoriManager", 1, 0, "MobileClient");
-    qmlRegisterUncreatableType<MobileClient::EyeMode>("SatoriManager", 1, 0, "EyeMode", "EyeMode is an enum");
-
-    MobileClient mobileClient;
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("mobileClient", &mobileClient);
+
+    // 注册客户端
+    MobileClient *mobileClientInstance = MobileClient::instance();
+    qmlRegisterSingletonInstance<MobileClient>("SatoriManagerBackend.MobileClient", 1, 0, "MobileClient", mobileClientInstance);
+    qmlRegisterUncreatableType<MobileClient::EyeMode>("SatoriManagerBackend.MobileClient", 1, 0, "EyeMode", "EyeMode is an enum");
+
+
+
+    qDebug() << engine.importPathList();
 
     const QUrl url(u"qrc:/qt/qml/Main/main.qml"_s);
     QObject::connect(
