@@ -63,8 +63,8 @@ void MobileClient::checkConnection()
         if (heartbeatTimeout > 3) // 如果连续3次未收到响应
         {
             qWarning() << "Connection lost, setting mode to Unconnected";
-            setMode(MobileClient::EyeMode::Unconnected);
-            robotIp.clear(); // 清除IP以避免重发心跳包
+            disconnectFromServer();
+
         }
     }
 }
@@ -138,6 +138,21 @@ void MobileClient::setServerMode(MobileClient::EyeMode serverMode)
     QString modeCommand = generateModeCommand(serverMode);
     sendCommand(modeCommand);
     qDebug() << "Sent server mode command:" << modeCommand;
+}
+
+void MobileClient::disconnectFromServer()
+{
+    if (udpSocket->isOpen()) {
+        udpSocket->close(); // 关闭 UDP 套接字
+        qDebug() << "Disconnected from server.";
+    }
+
+    if (heartbeatTimer->isActive()) {
+        heartbeatTimer->stop(); // 停止心跳定时器
+    }
+    robotIp.clear(); // 清除IP以避免重发心跳包
+    setMode(EyeMode::Unconnected); // 更新客户端模式为未连接状态
+    emit disconnected(); // 发出断开连接信号
 }
 
 // 辅助函数：将模式字符串解析为 EyeMode

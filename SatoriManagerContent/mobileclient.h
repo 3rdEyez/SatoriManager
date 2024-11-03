@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QUdpSocket>
 #include <QTimer>
-#include <qqmlintegration.h>
+#include <QTQml>
 
 class MobileClient : public QObject
 {
@@ -36,6 +36,7 @@ public:
 public slots:
     Q_INVOKABLE void findServer();                        // 启动服务器发现过程
     void setServerMode(MobileClient::EyeMode serverMode); // 远程更改服务器的模式
+    void disconnectFromServer();                          // 断开与服务器的连接
 
     // 遥控器操作函数，用于控制眼睛的移动和眨眼动作
     void lookUp();
@@ -46,6 +47,7 @@ public slots:
 
 signals:
     void modeChanged(); // 模式更改时发出信号
+    void disconnected(); // 发出断开连接信号
 
 private slots:
     void processPendingDatagrams();              // 处理接收到的 UDP 消息

@@ -1,10 +1,10 @@
 pragma Singleton
-import QtQuick 6.2
+import QtQuick
 import QtQuick.Studio.Application
 
 QtObject {
-    readonly property int width: 720
-    readonly property int height: 1280
+    readonly property int width: 360
+    readonly property int height: 720
 
     property string relativeFontDirectory: "fonts"
 
@@ -22,6 +22,6 @@ QtObject {
 
 
     property StudioApplication application: StudioApplication {
-        fontPath: Qt.resolvedUrl("../../content/" + relativeFontDirectory)
+        fontPath: Qt.resolvedUrl("../SatoriManagerContent/" + relativeFontDirectory)
     }
 }

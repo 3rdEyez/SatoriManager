@@ -3,20 +3,28 @@
 
 message("Building designer components.")
 
+set(QT_QDS_COMPONENTS_NOWARN on)
 set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/qml")
 
 include(FetchContent)
 FetchContent_Declare(
     ds
-    GIT_TAG qds-4.4
+    GIT_TAG qds-4.6
     GIT_REPOSITORY https://code.qt.io/qt-labs/qtquickdesigner-components.git
 )
 
 FetchContent_GetProperties(ds)
-FetchContent_Populate(ds)
+
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.30")
+  FetchContent_MakeAvailable(ds)
+else ()
+  FetchContent_Populate(ds)
+  add_subdirectory(${ds_SOURCE_DIR} ${ds_BINARY_DIR})
+endif()
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
     QuickStudioComponentsplugin
+    QuickStudioDesignEffectsplugin
     QuickStudioEffectsplugin
     QuickStudioApplicationplugin
     FlowViewplugin
@@ -27,8 +35,6 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
     QuickStudioUtilsplugin
 )
 
-add_subdirectory(${ds_SOURCE_DIR} ${ds_BINARY_DIR})
-
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-  BULD_QDS_COMPONENTS=true
+  BUILD_QDS_COMPONENTS=true
 )

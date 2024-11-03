@@ -1,3 +1,10 @@
+
+/*
+This is a UI file (.ui.qml) that is intended to be edited in Qt Design Studio only.
+It is supposed to be strictly declarative and only uses a subset of QML. If you edit
+this file manually, you might introduce QML code that is not supported by Qt Design Studio.
+Check out https://doc.qt.io/qtcreator/creator-quick-ui-forms.html for details on .ui.qml files.
+*/
 import QtQuick 6.2
 import QtQuick.Controls 6.2
 
@@ -6,7 +13,6 @@ Control {
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
     anchors.bottomMargin: 75
-    width: column.width * 0.4
     height: width
     opacity: 1
 
@@ -44,7 +50,7 @@ Control {
             id: button_up
             anchors.horizontalCenter: button_wink.horizontalCenter
             anchors.bottom: button_wink.top
-            anchors.bottomMargin: buttonSpacing
+            anchors.bottomMargin: control.buttonSpacing
             width: control.width * 0.25
             height: control.width * 0.25
 
@@ -62,7 +68,7 @@ Control {
             id: button_left
             anchors.verticalCenter: button_wink.verticalCenter
             anchors.right: button_wink.left
-            anchors.rightMargin: buttonSpacing
+            anchors.rightMargin: control.buttonSpacing
             width: button_up.width
             height: button_up.height
 
@@ -93,7 +99,7 @@ Control {
             id: button_right
             anchors.verticalCenter: button_wink.verticalCenter
             anchors.left: button_wink.right
-            anchors.leftMargin: buttonSpacing
+            anchors.leftMargin: control.buttonSpacing
             width: button_up.width
             height: button_up.height
 
@@ -111,7 +117,7 @@ Control {
             id: button_down
             anchors.horizontalCenter: button_wink.horizontalCenter
             anchors.top: button_wink.bottom
-            anchors.topMargin: buttonSpacing
+            anchors.topMargin: control.buttonSpacing
             width: button_up.width
             height: button_up.height
 
