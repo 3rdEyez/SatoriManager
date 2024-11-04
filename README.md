@@ -1,7 +1,3 @@
-以下是调整后的 README 结构，旨在优化信息的顺序和可读性：
-
----
-
 # SatoriManager 项目
 
 ## 项目简介
@@ -17,7 +13,7 @@ SatoriManager 是一个基于 Qt 和 QML 的小型机器人控制项目，用户
 - **C++17** 或更高版本
 - 支持 **UDP** 的网络环境
 
-## SatoriManager 前端整体描述
+## SatoriManager 前端描述
 SatoriManager 前端部分基于 Qt Quick 和 QML 实现，提供用户友好的界面来控制机器人眼部运动、模式切换、手动操作等功能。
 
 ### 主要页面与功能概述
