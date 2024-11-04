@@ -29,16 +29,11 @@ SatoriManager 前端部分基于 Qt Quick 和 QML 实现，提供用户友好的
    - 提供拨盘控件，用于调节眼皮开合角度和瞳孔大小，实现实时调整。
    - 界面包含描述文本，清晰标识拨盘功能，如“眼皮角度”和“瞳孔大小”。
 
-### 用户体验特点
-- **直观的视觉设计**：控件布局合理，操作便捷。
-- **动态反馈**：颜色和动画实时提示连接状态。
-- **模块化设计**：方便扩展和维护。
-
 ## 安装与使用
 
 ### 克隆项目
 ```bash
-git clone https://github.com/你的仓库地址/SatoriManager.git
+git clone https://github.com/3rdEyez/SatoriManager.git
 cd SatoriManager
 ```
 
