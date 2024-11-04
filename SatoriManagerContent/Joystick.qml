@@ -1,6 +1,9 @@
 import QtQuick 6.2
 
 JoystickForm {
+
+    property int batteryLevel: 0 // 定义电量属性
+
     // 定义用于定时调用的 Timer
     Timer {
         id: repeatTimer
@@ -54,5 +57,14 @@ JoystickForm {
     }
     button_wink.onReleased: {
         repeatTimer.stop()
+    }
+    Connections {
+            target: MobileClient
+            onBatteryInfoReceived: {
+                batteryLevel = batteryPercentage; // 更新电量属性
+                statusText.text = MobileClient.mode !== MobileClient.EyeMode.Unconnected
+                    ? "已连接，剩余电量为 " + batteryLevel + "%"
+                    : "未连接"; // 更新状态文本
+            }
     }
 }

@@ -13,6 +13,7 @@ Control {
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
     anchors.bottomMargin: 75
+    property alias statusText: statusText
     height: width
     opacity: 1
 
@@ -32,6 +33,30 @@ Control {
         anchors.fill: parent // 背景填充整个父项
         color: "transparent"
 
+        Text {
+            id: statusText
+            font.pixelSize: 15
+            z: 1
+            anchors.horizontalCenterOffset: 0
+            anchors.horizontalCenter: borderImage.horizontalCenter
+            anchors.margins: 20
+            color: MobileClient.mode !== MobileClient.EyeMode.Unconnected ? "green" : "red" // 初始颜色
+
+            // 闪烁动画
+            SequentialAnimation on color {
+                running: MobileClient.mode !== MobileClient.EyeMode.Unconnected // 仅在连接时运行动画
+                loops: Animation.Infinite
+                ColorAnimation {
+                    to: "transparent"
+                    duration: 500
+                }
+                ColorAnimation {
+                    to: "green"
+                    duration: 500
+                }
+            }
+            anchors.top: parent.bottom
+        }
         BorderImage {
             id: borderImage
             opacity: 0.4
