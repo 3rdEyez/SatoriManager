@@ -6,8 +6,8 @@
 #include <QGuiApplication>
 #include "qqmlextensionplugin.h"
 
-Q_IMPORT_QML_PLUGIN(SatoriManagerContentPlugin)
 Q_IMPORT_QML_PLUGIN(SatoriManagerPlugin)
+Q_IMPORT_QML_PLUGIN(SatoriManagerContentPlugin)
 
 const char mainQmlFile[] = "qrc:/qt/qml/SatoriManagerContent/App.qml";
 
