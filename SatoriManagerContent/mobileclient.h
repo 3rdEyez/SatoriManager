@@ -17,7 +17,7 @@ public:
     explicit MobileClient(QObject *parent = nullptr);
 
     // 获取 MobileClient 的单例实例
-    static MobileClient* instance();
+    static MobileClient *instance();
 
     // 枚举类：定义客户端的连接模式
     enum class EyeMode : int
@@ -30,8 +30,8 @@ public:
     };
     Q_ENUM(EyeMode)
 
-    static const int MIN_PWM_VALUE = 500;    // 最小PWM值
-    static const int MAX_PWM_VALUE = 2500;   // 最大PWM值
+    static const int MIN_PWM_VALUE = 500;  // 最小PWM值
+    static const int MAX_PWM_VALUE = 2500; // 最大PWM值
     // 获取当前客户端模式
     MobileClient::EyeMode mode() const;
 
@@ -48,8 +48,8 @@ public slots:
     void wink();
 
 signals:
-    void modeChanged(); // 模式更改时发出信号
-    void disconnected(); // 发出断开连接信号
+    void modeChanged();                              // 模式更改时发出信号
+    void disconnected();                             // 发出断开连接信号
     void batteryInfoReceived(int batteryPercentage); // 收到来自觉之瞳的电量信息
 
 private slots:
@@ -71,11 +71,13 @@ private:
     QTimer *heartbeatTimer; // 用于周期性发送心跳消息的计时器
     int heartbeatTimeout;   // 记录连续心跳超时的次数
 
-    int currentCH1; // 眼球左右位置
-    int currentCH2; // 眼球上下位置
-    int currentCH3; // 上眼皮上下位置
+    int currentCH1;            // 眼球左右位置
+    int currentCH2;            // 眼球上下位置
+    int currentCH3;            // 上眼皮上下位置
     const int Increment = 100; // 每次旋转的角度增量
-
+    void handleServerResponse(const QNetworkDatagram &datagram, const QString &message);
+    void handleBatteryInfo(const QString &message);
+    void processBatteryInfo(const QString &batteryLevel);
 };
 
 #endif // MOBILECLIENT_H

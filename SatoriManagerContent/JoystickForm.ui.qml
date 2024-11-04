@@ -13,7 +13,7 @@ Control {
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
     anchors.bottomMargin: 75
-    property alias statusText: statusText
+
     height: width
     opacity: 1
 
@@ -23,6 +23,7 @@ Control {
     property alias button_left: button_left
     property alias button_wink: button_wink
     property alias button_up: button_up
+    property alias statusText: statusText
 
     //设置排列相关参数
     property int buttonSpacing: 10
@@ -40,22 +41,33 @@ Control {
             anchors.horizontalCenterOffset: 0
             anchors.horizontalCenter: borderImage.horizontalCenter
             anchors.margins: 20
+            anchors.top: parent.bottom
             color: MobileClient.mode !== MobileClient.EyeMode.Unconnected ? "green" : "red" // 初始颜色
-
+            text: "未连接"
             // 闪烁动画
             SequentialAnimation on color {
                 running: MobileClient.mode !== MobileClient.EyeMode.Unconnected // 仅在连接时运行动画
                 loops: Animation.Infinite
                 ColorAnimation {
                     to: "transparent"
-                    duration: 500
+                    duration: 1000
                 }
                 ColorAnimation {
                     to: "green"
-                    duration: 500
+                    duration: 1000
                 }
             }
-            anchors.top: parent.bottom
+
+            Connections {
+                    target: MobileClient
+                    onBatteryInfoReceived: (batteryPercentage)=>{
+                        statusText.text = "已连接，剩余电量为 " + batteryPercentage + "%" // 更新状态文本
+                    }
+                    onDisconnected: ()=>{
+                                        statusText.text = "未连接"
+
+                    }
+            }
         }
         BorderImage {
             id: borderImage
