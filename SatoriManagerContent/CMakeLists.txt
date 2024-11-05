@@ -22,6 +22,7 @@ qt6_add_qml_module(SatoriManagerContent
         "images/circle.png"
         "images/play-button-arrowhead.png"
     SOURCES
+        "ProtocolMessages.h"
         "mobileclient.h"
         "mobileclient.cpp"
 )
