@@ -39,7 +39,7 @@ public slots:
     Q_INVOKABLE void findServer();                        // 启动服务器发现过程
     void setServerMode(MobileClient::EyeMode serverMode); // 远程更改服务器的模式
     void disconnectFromServer();                          // 断开与服务器的连接
-    void updateChannelValue(int channel, int value);
+    void updateChannelValue(int channel, float value);
     // 遥控器操作函数，用于控制眼睛的移动和眨眼动作
     void lookUp();
     void lookDown();
@@ -60,7 +60,7 @@ private slots:
 
 private:
     MobileClient::EyeMode parseModeString(const QString &modeString); // 将字符串解析为 EyeMode 枚举
-    QString generateModeCommand(MobileClient::EyeMode serverMode);    // 生成模式切换的命令字符串
+    QString modeToString(MobileClient::EyeMode serverMode);    // 生成模式切换的命令字符串
     QString generatePwmControlMessage();
 
     MobileClient::EyeMode m_mode; // 当前客户端模式

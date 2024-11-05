@@ -1,4 +1,5 @@
 #include "mobileclient.h"
+#include "ProtocolMessages.h"
 #include <QHostAddress>
 #include <QDebug>
 #include <QNetworkDatagram>
@@ -53,15 +54,12 @@ void MobileClient::checkConnection()
 {
     if (!robotIp.isEmpty())
     {
-        // 发送心跳包
-        QByteArray heartbeatMessage = "SatoriEye_HEARTBEAT_REQUEST";
-        udpSocket->writeDatagram(heartbeatMessage, QHostAddress(robotIp), robotPort);
+        udpSocket->writeDatagram(ProtocolMessages::HeartbeatRequest, QHostAddress(robotIp), robotPort);
         qDebug() << "Sent heartbeat request to:" << robotIp << ":" << robotPort;
 
-        // 检查心跳超时
         heartbeatTimeout++;
         if (heartbeatTimeout > 3)
-        { // 如果连续3次未收到响应
+        {
             qWarning() << "Connection lost, setting mode to Unconnected";
             disconnectFromServer();
         }
@@ -88,53 +86,51 @@ void MobileClient::processBatteryInfo(const QString& batteryLevel)
 }
     void MobileClient::processPendingDatagrams()
 {
-    while (udpSocket->hasPendingDatagrams())
-    {
-        QNetworkDatagram datagram = udpSocket->receiveDatagram();
-        QString message = QString::fromUtf8(datagram.data());
+        while (udpSocket->hasPendingDatagrams())
+        {
+            QNetworkDatagram datagram = udpSocket->receiveDatagram();
+            QString message = QString::fromUtf8(datagram.data());
 
-        if (message.startsWith("SatoriEye_DISCOVERY_RESPONSE"))
-        {
-            // 假设连接确认消息中包含电量信息
-            QStringList messageParts = message.split(',');
-            robotIp = datagram.senderAddress().toString();
-            robotPort = datagram.senderPort();
-            qDebug() << "Robot server found at:" << robotIp << ":" << robotPort;
-            if (messageParts.size() > 1)
+            if (message.startsWith(ProtocolMessages::DiscoveryResponse))
             {
-                processBatteryInfo(messageParts[1]); // 处理电量信息
+                QStringList messageParts = message.split(',');
+                robotIp = datagram.senderAddress().toString();
+                robotPort = datagram.senderPort();
+                qDebug() << "Robot server found at:" << robotIp << ":" << robotPort;
+                if (messageParts.size() > 1)
+                {
+                    processBatteryInfo(messageParts[1]);
+                }
+                setMode(MobileClient::EyeMode::Auto);
+                heartbeatTimeout = 0;
             }
-            setMode(MobileClient::EyeMode::Auto);
-            heartbeatTimeout = 0; // 重置心跳超时计数
-        }
-        else if (message.startsWith("SatoriEye_HEARTBEAT_RESPONSE"))
-        {
-            heartbeatTimeout = 0;
-            QStringList messageParts = message.split(',');
-            if (messageParts.size() > 1)
+            else if (message.startsWith(ProtocolMessages::HeartbeatResponse))
             {
-                processBatteryInfo(messageParts[1]); // 处理电量信息
+                heartbeatTimeout = 0;
+                QStringList messageParts = message.split(',');
+                if (messageParts.size() > 1)
+                {
+                    processBatteryInfo(messageParts[1]);
+                }
             }
-        }
-        else if (message.startsWith("SET_MODE_SUCCESS:"))
-        {
-            QString newModeString = message.section(':', 1, 1);
-            MobileClient::EyeMode newMode = parseModeString(newModeString);
-            if (newMode != MobileClient::EyeMode::Unconnected)
+            else if (message.startsWith(ProtocolMessages::SetModeSuccessPrefix))
             {
-                setMode(newMode);
-                qDebug() << "Mode successfully changed to:" << newModeString;
+                QString newModeString = message.section(':', 1, 1);
+                MobileClient::EyeMode newMode = parseModeString(newModeString);
+                if (newMode != MobileClient::EyeMode::Unconnected)
+                {
+                    setMode(newMode);
+                    qDebug() << "Mode successfully changed to:" << newModeString;
+                }
             }
         }
-    }
 }
 
 // 发现服务器的方法
 void MobileClient::findServer()
 {
     qDebug() << "Trying to find server...";
-    QByteArray discoveryMessage = "SatoriEye_DISCOVERY_REQUEST";
-    udpSocket->writeDatagram(discoveryMessage, QHostAddress::LocalHost, 8888);
+    udpSocket->writeDatagram(ProtocolMessages::DiscoveryRequest, QHostAddress::LocalHost, 8888);
 }
 
 // 发送设置模式的命令
@@ -149,7 +145,7 @@ void MobileClient::setServerMode(MobileClient::EyeMode serverMode)
     {
         return;
     }
-    QString modeCommand = generateModeCommand(serverMode);
+    QString modeCommand = QString(ProtocolMessages::SetModePrefix) + modeToString(serverMode);
     sendCommand(modeCommand);
     qDebug() << "Sent server mode command:" << modeCommand;
 }
@@ -179,18 +175,18 @@ void MobileClient::disconnectFromServer()
 }
 
 // 更新通道值并发送PWM控制消息
-void MobileClient::updateChannelValue(int channel, int value)
+void MobileClient::updateChannelValue(int channel, float value)
 {
     switch (channel)
     {
     case 1:
-        currentCH1 = qBound(MIN_PWM_VALUE, currentCH1 + value, MAX_PWM_VALUE);
+        currentCH1 = qBound(MIN_PWM_VALUE, currentCH1 + int(value), MAX_PWM_VALUE);
         break;
     case 2:
-        currentCH2 = qBound(MIN_PWM_VALUE, currentCH2 + value, MAX_PWM_VALUE);
+        currentCH2 = qBound(MIN_PWM_VALUE, currentCH2 + int(value), MAX_PWM_VALUE);
         break;
     case 3:
-        currentCH3 = qBound(MIN_PWM_VALUE, currentCH3 + value, MAX_PWM_VALUE);
+        currentCH3 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * value;
         break;
     }
     sendCommand(generatePwmControlMessage());
@@ -216,21 +212,21 @@ MobileClient::EyeMode MobileClient::parseModeString(const QString &modeString)
     }
 }
 
-// 生成设置模式的命令字符串
-QString MobileClient::generateModeCommand(MobileClient::EyeMode serverMode)
+// 将模式枚举转换为字符串
+QString MobileClient::modeToString(MobileClient::EyeMode mode)
 {
-    switch (serverMode)
+    switch (mode)
     {
     case MobileClient::EyeMode::Unconnected:
-        return "SET_MODE:Unconnected";
+        return "Unconnected";
     case MobileClient::EyeMode::Auto:
-        return "SET_MODE:Auto";
+        return "Auto";
     case MobileClient::EyeMode::Manual:
-        return "SET_MODE:Manual";
+        return "Manual";
     case MobileClient::EyeMode::Sleep:
-        return "SET_MODE:Sleep";
+        return "Sleep";
     case MobileClient::EyeMode::FacialRecognition:
-        return "SET_MODE:FacialRecognition";
+        return "FacialRecognition";
     default:
         return "";
     }
@@ -270,5 +266,5 @@ void MobileClient::wink()
 // 生成PWM控制消息字符串
 QString MobileClient::generatePwmControlMessage()
 {
-    return QString("CH1:%1CH2:%2CH3:%3").arg(currentCH1).arg(currentCH2).arg(currentCH3);
+    return QString(ProtocolMessages::PwmControlPrefix).arg(currentCH1).arg(currentCH2).arg(currentCH3);
 }

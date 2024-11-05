@@ -35,9 +35,8 @@ Item {
                 width: parent.width * 0.5
                 height: width
                 anchors.horizontalCenter: parent.horizontalCenter
-
-                onValueChanged: {
-                        // 调用后端模块的方法，传递当前的值
+                value: 0.5
+                onValueChanged: ()=>{
                         MobileClient.updateChannelValue(3, value)
                     }
             }
