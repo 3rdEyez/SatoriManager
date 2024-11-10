@@ -97,6 +97,7 @@ void MobileClient::updateChannelValues(int inCH1, int inCH2, int inCH3)
     currentCH1 = inCH1;
     currentCH2 = inCH2;
     currentCH3 = inCH3;
+    sendCommand(generatePwmControlMessage());
 }
 
 // 发送命令到服务器

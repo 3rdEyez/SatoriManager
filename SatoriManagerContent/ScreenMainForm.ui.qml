@@ -90,7 +90,11 @@ Rectangle {
                     model: MobileClient.getPresetActionNames()
                     Button {
                         text: modelData
-                        onClicked: MobileClient.executeAction(modelData)
+                        width: parent.width * 2 / 3
+                        height: parent.height * 1 / 4
+                        onClicked: ()=>{
+                                       MobileClient.executePresetAction(modelData)
+                                   }
                     }
                 }
             }

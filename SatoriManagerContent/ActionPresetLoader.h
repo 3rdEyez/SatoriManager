@@ -25,13 +25,12 @@ public:
     QVariantList getActionFrames(const QString &actionName) const;
 
 private:
-    // 解析单个动作的关键帧数据
-    QVariantMap parseAction(const QJsonObject &actionObject);
+    static const QString PRESET_FILE_PATH;
 
     // 存储动作名称和对应的关键帧数据
     QMap<QString, QVariantMap> actionsMap;
-
-    static const QString PRESET_FILE_PATH;
+    // 解析单个动作的关键帧数据
+    QVariantMap parseAction(const QJsonArray &actionArray);
 };
 
 #endif // ACTIONPRESETLOADER_H
