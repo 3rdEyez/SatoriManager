@@ -86,6 +86,13 @@ Rectangle {
                 width: parent.width / 2
                 height: parent.height * 2 / 3
                 spacing: 10
+                Repeater {
+                    model: MobileClient.getPresetActionNames()
+                    Button {
+                        text: modelData
+                        onClicked: MobileClient.executeAction(modelData)
+                    }
+                }
             }
         }
     }

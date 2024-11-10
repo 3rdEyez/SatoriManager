@@ -25,6 +25,9 @@ qt6_add_qml_module(SatoriManagerContent
         "ProtocolMessages.h"
         "mobileclient.h"
         "mobileclient.cpp"
+        "ActionPresetLoader.h"
+        "ActionPresetLoader.cpp"
+        # "PresetActions.json"
 )
 set_property(TARGET SatoriManagerApp APPEND PROPERTY
     QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/android"

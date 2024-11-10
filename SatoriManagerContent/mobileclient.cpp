@@ -1,15 +1,19 @@
 #include "mobileclient.h"
 #include "ProtocolMessages.h"
+#include "ActionPresetLoader.h"
 #include <QHostAddress>
 #include <QDebug>
 #include <QNetworkDatagram>
+
 const int MobileClient::MIN_PWM_VALUE;
 const int MobileClient::MAX_PWM_VALUE;
 
 // 构造函数：初始化成员变量和UDP通信设置
 MobileClient::MobileClient(QObject *parent) : QObject(parent),
+                                              actionLoader(new ActionPresetLoader(this)),
                                               udpSocket(new QUdpSocket(this)),
                                               heartbeatTimer(new QTimer(this)),
+                                              reconnectTimer(new QTimer(this)),
                                               m_mode(EyeMode::Unconnected),
                                               currentCH1(1500), // 默认初始值
                                               currentCH2(1500), // 默认初始值
@@ -21,6 +25,10 @@ MobileClient::MobileClient(QObject *parent) : QObject(parent),
     // 初始化心跳定时器并设置定时任务
     connect(heartbeatTimer, &QTimer::timeout, this, &MobileClient::checkConnection);
     heartbeatTimer->start(20000);
+
+    // 初始化重连定时器
+    reconnectTimer->setInterval(10000); // 设置重连间隔为5秒
+    connect(reconnectTimer, &QTimer::timeout, this, &MobileClient::attemptReconnect);
 
     // 寻找觉之瞳服务器
     findServer();
@@ -57,13 +65,38 @@ void MobileClient::checkConnection()
         udpSocket->writeDatagram(ProtocolMessages::HeartbeatRequest, QHostAddress(robotIp), robotPort);
         qDebug() << "Sent heartbeat request to:" << robotIp << ":" << robotPort;
 
-        heartbeatTimeout++;
         if (heartbeatTimeout > 3)
         {
-            qWarning() << "Connection lost, setting mode to Unconnected";
+            qWarning() << "Connection lost, setting mode to Unconnected and starting reconnect attempts";
             disconnectFromServer();
+            attemptReconnect();
         }
     }
+}
+
+// 自动重连逻辑
+void MobileClient::attemptReconnect()
+{
+    if (reconnectAttempts < maxReconnectAttempts)
+    {
+        reconnectAttempts++;
+        qDebug() << "Attempting to reconnect... Attempt" << reconnectAttempts;
+        findServer();            // 重新执行服务器发现操作
+        reconnectTimer->start(); // 启动重连计时器
+    }
+    else
+    {
+        qWarning() << "Max reconnect attempts reached. Stopping further attempts.";
+        reconnectTimer->stop();
+        emit disconnected(); // 发出已断开连接的信号
+    }
+}
+
+void MobileClient::updateChannelValues(int inCH1, int inCH2, int inCH3)
+{
+    currentCH1 = inCH1;
+    currentCH2 = inCH2;
+    currentCH3 = inCH3;
 }
 
 // 发送命令到服务器
@@ -79,51 +112,51 @@ void MobileClient::sendCommand(const QString &command)
     qDebug() << "Sent message:" << command;
 }
 
-void MobileClient::processBatteryInfo(const QString& batteryLevel)
+void MobileClient::processBatteryInfo(const QString &batteryLevel)
 {
     int Percentage = batteryLevel.toInt();
     emit batteryInfoReceived(Percentage);
 }
-    void MobileClient::processPendingDatagrams()
+void MobileClient::processPendingDatagrams()
 {
-        while (udpSocket->hasPendingDatagrams())
-        {
-            QNetworkDatagram datagram = udpSocket->receiveDatagram();
-            QString message = QString::fromUtf8(datagram.data());
+    while (udpSocket->hasPendingDatagrams())
+    {
+        QNetworkDatagram datagram = udpSocket->receiveDatagram();
+        QString message = QString::fromUtf8(datagram.data());
 
-            if (message.startsWith(ProtocolMessages::DiscoveryResponse))
+        if (message.startsWith(ProtocolMessages::DiscoveryResponse))
+        {
+            QStringList messageParts = message.split(',');
+            robotIp = datagram.senderAddress().toString();
+            robotPort = datagram.senderPort();
+            qDebug() << "Robot server found at:" << robotIp << ":" << robotPort;
+            if (messageParts.size() > 1)
             {
-                QStringList messageParts = message.split(',');
-                robotIp = datagram.senderAddress().toString();
-                robotPort = datagram.senderPort();
-                qDebug() << "Robot server found at:" << robotIp << ":" << robotPort;
-                if (messageParts.size() > 1)
-                {
-                    processBatteryInfo(messageParts[1]);
-                }
-                setMode(MobileClient::EyeMode::Auto);
-                heartbeatTimeout = 0;
+                processBatteryInfo(messageParts[1]);
             }
-            else if (message.startsWith(ProtocolMessages::HeartbeatResponse))
+            setMode(MobileClient::EyeMode::Auto);
+            heartbeatTimeout = 0;
+        }
+        else if (message.startsWith(ProtocolMessages::HeartbeatResponse))
+        {
+            heartbeatTimeout = 0;
+            QStringList messageParts = message.split(',');
+            if (messageParts.size() > 1)
             {
-                heartbeatTimeout = 0;
-                QStringList messageParts = message.split(',');
-                if (messageParts.size() > 1)
-                {
-                    processBatteryInfo(messageParts[1]);
-                }
-            }
-            else if (message.startsWith(ProtocolMessages::SetModeSuccessPrefix))
-            {
-                QString newModeString = message.section(':', 1, 1);
-                MobileClient::EyeMode newMode = parseModeString(newModeString);
-                if (newMode != MobileClient::EyeMode::Unconnected)
-                {
-                    setMode(newMode);
-                    qDebug() << "Mode successfully changed to:" << newModeString;
-                }
+                processBatteryInfo(messageParts[1]);
             }
         }
+        else if (message.startsWith(ProtocolMessages::SetModeSuccessPrefix))
+        {
+            QString newModeString = message.section(':', 1, 1);
+            MobileClient::EyeMode newMode = parseModeString(newModeString);
+            if (newMode != MobileClient::EyeMode::Unconnected)
+            {
+                setMode(newMode);
+                qDebug() << "Mode successfully changed to:" << newModeString;
+            }
+        }
+    }
 }
 
 // 发现服务器的方法
@@ -131,6 +164,51 @@ void MobileClient::findServer()
 {
     qDebug() << "Trying to find server...";
     udpSocket->writeDatagram(ProtocolMessages::DiscoveryRequest, QHostAddress::LocalHost, 8888);
+}
+
+// 加载预设动作 JSON 文件
+bool MobileClient::loadPresetActions(const QString &filePath)
+{
+    return actionLoader->loadPresetActions(filePath);
+}
+
+// 获取所有预设动作的名称
+QStringList MobileClient::getPresetActionNames()
+{
+    return actionLoader->getActionNames();
+}
+
+// 执行指定名称的预设动作
+void MobileClient::executePresetAction(const QString &actionName)
+{
+    QVariantList frames = actionLoader->getActionFrames(actionName);
+    if (frames.isEmpty())
+    {
+        qWarning() << "No frames found for action:" << actionName;
+        return;
+    }
+
+    // 调用播放关键帧的辅助函数
+    playFrames(frames);
+}
+
+// 播放关键帧数据
+void MobileClient::playFrames(const QVariantList &frames)
+{
+    for (const QVariant &frame : frames)
+    {
+        QVariantMap frameData = frame.toMap();
+        int ch1Value = frameData["CH1"].toInt();
+        int ch2Value = frameData["CH2"].toInt();
+        int ch3Value = frameData["CH3"].toInt();
+        int duration = frameData["duration"].toInt();
+
+        // 使用当前帧的数据更新通道值
+        updateChannelValues(ch1Value, ch2Value, ch3Value);
+
+        // 等待当前帧的持续时间
+        QThread::msleep(duration);
+    }
 }
 
 // 发送设置模式的命令
@@ -154,7 +232,6 @@ void MobileClient::disconnectFromServer()
 {
     if (!robotIp.isEmpty())
     {
-        // 向服务器发送断开连接的通知
         QByteArray disconnectMessage = "SatoriEye_DISCONNECT";
         udpSocket->writeDatagram(disconnectMessage, QHostAddress(robotIp), robotPort);
         qDebug() << "Sent disconnect message to server.";
@@ -165,12 +242,15 @@ void MobileClient::disconnectFromServer()
         udpSocket->close();
         qDebug() << "Disconnected from server.";
     }
+
     if (heartbeatTimer->isActive())
     {
         heartbeatTimer->stop();
     }
+
     robotIp.clear();
     setMode(EyeMode::Unconnected);
+    reconnectAttempts = 0; // 重置重连尝试计数
     emit disconnected();
 }
 
