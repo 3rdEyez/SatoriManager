@@ -3,9 +3,9 @@ import QtQuick.Controls
 import SatoriManager 1.0
 
 ScreenMainForm {
-    readonly property color highlightColor: "grey" // 高亮颜色
-    readonly property color defaultColor: "lightgrey" // 默认颜色
-    button_auto.onClicked: {
+    readonly property color highlightColor: "#FAD8E9"  // 高亮颜色
+    readonly property color defaultColor: "#F17EB7" // 默认颜色
+    button_auto.onClicked: ()=>{
         MobileClient.setServerMode(MobileClient.EyeMode.Auto)
     }
     button_sleep.onClicked: {
@@ -37,6 +37,7 @@ ScreenMainForm {
                     === MobileClient.EyeMode.FacialRecognition ? highlightColor : defaultColor
             button_Manual.background.color = MobileClient.mode
                     === MobileClient.EyeMode.Manual ? highlightColor : defaultColor
+
             if(MobileClient.mode === MobileClient.EyeMode.Unconnected){
                 button_connect.visible = true
                 button_disconnect.visible = false

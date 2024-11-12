@@ -1,4 +1,3 @@
-
 /*
 This is a UI file (.ui.qml) that is intended to be edited in Qt Design Studio only.
 It is supposed to be strictly declarative and only uses a subset of QML. If you edit
@@ -7,10 +6,17 @@ Check out https://doc.qt.io/qtcreator/creator-quick-ui-forms.html for details on
 */
 import QtQuick 6.2
 import QtQuick.Controls 6.2
+import QtQuick.Shapes 6.2
 import SatoriManager
 
 Rectangle {
     id: rectangle
+    width: 640
+    height: 480
+    color: "#f3f4f6"
+    radius: 10
+    border.color: "#d1d5db"
+    border.width: 1
 
     property alias button_Manual: button_Manual
     property alias control: control
@@ -20,117 +26,147 @@ Rectangle {
     property alias button_auto: button_auto
     property alias button_disconnect: button_disconnect
 
+    Rectangle {
+        id: header
+        width: parent.width
+        height: 50
+        color: "#a78bfa"
+        radius: 10
+        anchors.top: parent.top
+        Text {
+            anchors.centerIn: parent
+            text: qsTr("控制面板")
+            color: "white"
+            font.pixelSize: 24
+            font.bold: true
+        }
+    }
+
     Column {
         id: mainLayout
         anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.leftMargin: 10
+        anchors.top: header.bottom
+        anchors.leftMargin: 20
         anchors.topMargin: 10
-        spacing: 20
+        spacing: 15
         width: parent.width - 2 * anchors.leftMargin
-        height: parent.height * 3 / 5 - 2 * anchors.topMargin
+        height: parent.height - header.height - 80
 
         Row {
             id: row
             width: parent.width
-            height: parent.height * 2 / 3
+            height: parent.height * 0.5
+            spacing: 15
 
-            property int buttonFontSize: 20
+            property int buttonFontSize: 18
+
             Column {
                 // 用来放切换模式的按钮
-                id: column
-                width: parent.width / 2
+                id: modeColumn
+                width: (parent.width - parent.spacing) * 0.5
                 height: parent.height
                 spacing: 10
 
-                Button {
+                StyledButton {
                     id: button_auto
-                    width: parent.width * 2 / 3
-                    height: parent.height * 1 / 4
                     text: qsTr("自动模式")
                     font.pixelSize: row.buttonFontSize
+                    width: modeColumn.width * 0.8
+                    height: 50
                     anchors.horizontalCenter: parent.horizontalCenter
+                    onClicked: ()=>{console.log(111)}
                 }
 
-                Button {
+                StyledButton {
                     id: button_sleep
-                    width: button_auto.width
-                    height: button_auto.height
                     text: qsTr("睡眠模式")
                     font.pixelSize: row.buttonFontSize
+                    width: button_auto.width
+                    height: button_auto.height
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
 
-                Button {
+                StyledButton {
                     id: button_facialRecognition
-                    width: button_auto.width
-                    height: button_auto.height
                     text: qsTr("人脸识别")
                     font.pixelSize: row.buttonFontSize
+                    width: button_auto.width
+                    height: button_auto.height
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
 
-                Button {
+                StyledButton {
                     id: button_Manual
-                    width: button_auto.width
-                    height: button_auto.height
                     text: qsTr("手动模式")
                     font.pixelSize: row.buttonFontSize
+                    width: button_auto.width
+                    height: button_auto.height
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
             }
 
             Column {
                 // 用于播放预设动作的按钮
-                id: column1
-                width: parent.width / 2
-                height: parent.height * 2 / 3
+                id: actionColumn
+                width: modeColumn.width
+                height: parent.height
                 spacing: 10
+
                 Repeater {
                     model: MobileClient.getPresetActionNames()
-                    Button {
+                    StyledButton {
                         text: modelData
-                        width: parent.width * 2 / 3
-                        height: parent.height * 1 / 4
-                        onClicked: ()=>{
-                                       MobileClient.executePresetAction(modelData)
-                                   }
+                        width: actionColumn.width * 0.8
+                        height: 50
+                        font.pixelSize: row.buttonFontSize
+                        onClicked: MobileClient.executePresetAction(modelData)
+                        anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
             }
         }
     }
 
-    Joystick {
-        // 遥控器
-        id: control
-        width: parent.width * 0.5
-        height: width
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 75
-        anchors.horizontalCenterOffset: 0
-    }
-
-    Button {
+    StyledButton {
         id: button_connect
         text: qsTr("连接")
         font.pixelSize: row.buttonFontSize
-        z: 5
-        width: parent.width * 0.2
-        height: width / 2
-        anchors.bottom: control.top
-        anchors.topMargin: -3 * button_connect.icon.width
-        anchors.horizontalCenter: control.horizontalCenter
+        width: 120
+        height: 40
+        opacity: 1
+        anchors.bottom: joystickBackground.top
+        anchors.bottomMargin: 10
+        anchors.horizontalCenter: joystickBackground.horizontalCenter
+        normalColor: "#10b981" // 绿色
     }
+
     DelayButton {
         id: button_disconnect
         text: qsTr("断开")
         font.pixelSize: row.buttonFontSize
-        width: parent.width * 0.2
-        height: width / 2
-        opacity: 1
-        anchors.bottom: control.top
-        anchors.topMargin: -3 * button_connect.icon.width
-        anchors.horizontalCenter: control.horizontalCenter
+        x: button_connect.x
+        y: button_connect.y
+        width: 120
+        height: 40
+        z: -1
+        background: Rectangle { color: "#ef4444"; radius: 8 } // 红色
+    }
+
+    Rectangle {
+        id: joystickBackground
+        width: parent.width * 0.5
+        height: width
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 80
+        anchors.horizontalCenter: parent.horizontalCenter
+        color: "#F17EB7"
+        radius: width / 2
+
+        Joystick {
+            id: control
+            width: parent.width
+            height: parent.height
+            anchors.centerIn: parent
+        }
     }
 }

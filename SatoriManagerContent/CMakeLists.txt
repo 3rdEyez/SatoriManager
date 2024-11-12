@@ -17,6 +17,7 @@ qt6_add_qml_module(SatoriManagerContent
         "ScreenControl.qml"
         "ScreenMain.qml"
         "AppForm.ui.qml"
+        "StyledButton.ui.qml"
     RESOURCES
         "images/right.png"
         "images/circle.png"
