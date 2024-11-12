@@ -52,7 +52,6 @@ QVariantMap ActionPresetLoader::parseAction(const QJsonArray &actionArray)
         frameData.insert("CH2", frameObj["CH2"].toInt());
         frameData.insert("CH3", frameObj["CH3"].toInt());
         frameData.insert("duration", frameObj["duration"].toInt());
-        qDebug() << frameData;
         framesList.append(frameData);
     }
 
