@@ -71,8 +71,8 @@ Rectangle {
                     id: button_auto
                     text: qsTr("自动模式")
                     font.pixelSize: row.buttonFontSize
-                    width: modeColumn.width * 0.8
-                    height: 50
+                    width: parent.width * 0.8
+                    height:(parent.height - 4 * parent.spacing )/4
                     anchors.horizontalCenter: parent.horizontalCenter
                     onClicked: ()=>{console.log(111)}
                 }
@@ -116,8 +116,8 @@ Rectangle {
                     model: MobileClient.getPresetActionNames()
                     StyledButton {
                         text: modelData
-                        width: actionColumn.width * 0.8
-                        height: 50
+                        width: parent.width * 0.8
+                        height:(parent.height - 4 * parent.spacing )/4
                         font.pixelSize: row.buttonFontSize
                         onClicked: MobileClient.executePresetAction(modelData)
                         anchors.horizontalCenter: parent.horizontalCenter

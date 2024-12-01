@@ -29,7 +29,6 @@ qt6_add_qml_module(SatoriManagerContent
         "mobileclient.cpp"
         "ActionPresetLoader.h"
         "ActionPresetLoader.cpp"
-        # "PresetActions.json"
 )
 
 # 设置 JSON 模板文件的路径
