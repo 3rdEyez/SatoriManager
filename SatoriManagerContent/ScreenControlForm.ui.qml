@@ -55,18 +55,20 @@ Rectangle {
             Column {
                 anchors.centerIn: parent
                 spacing: 5
-
+                width: 0.6 * parent.width
                 Dial {
                     id: eyeLidDial
                     width: parent.width
                     height: width
                     value: 0.5
                     onValueChanged: MobileClient.updateChannelValues(-1, -1, value)
+                    anchors.horizontalCenter: parent.horizontalCenter
                 }
 
                 Text {
                     text: qsTr("眼皮角度")
                     font.pixelSize: 20
+                    anchors.horizontalCenter: parent.horizontalCenter
                 }
             }
         }
@@ -89,11 +91,13 @@ Rectangle {
                     id: pupilDial
                     width: eyeLidDial.width
                     height: eyeLidDial.height
+                    anchors.horizontalCenter: parent.horizontalCenter
                 }
 
                 Text {
                     text: qsTr("瞳孔大小")
                     font.pixelSize: 20
+                    anchors.horizontalCenter: parent.horizontalCenter
                 }
             }
         }
