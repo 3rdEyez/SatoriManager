@@ -42,14 +42,10 @@ public slots:
     Q_INVOKABLE bool loadPresetActions(const QString &filePath); // 加载预设动作 JSON 文件
     void setServerMode(MobileClient::EyeMode serverMode); // 远程更改服务器的模式
     void disconnectFromServer();                          // 断开与服务器的连接
-    void updateChannelValue(int channel, float value);
+    void updateChannelValues(float inCH1 = -1, float inCH2 = -1, float inCH3 = -1);
     void executePresetAction(const QString &actionName);
 
-    // 遥控器操作函数，用于控制眼睛的移动和眨眼动作
-    void lookUp();
-    void lookDown();
-    void lookLeft();
-    void lookRight();
+    // 遥控器操作函数，用于控制眨眼
     void wink();
 
 signals:
@@ -74,7 +70,6 @@ private:
     int currentCH1;            // 眼球左右位置
     int currentCH2;            // 眼球上下位置
     int currentCH3;            // 上眼皮上下位置
-    const int Increment = 100; // 每次旋转的角度增量
 
 private:
     MobileClient::EyeMode parseModeString(const QString &modeString); // 将字符串解析为 EyeMode 枚举
@@ -84,7 +79,6 @@ private:
     void handleBatteryInfo(const QString &message);
     void processBatteryInfo(const QString &batteryLevel);
     void attemptReconnect();
-    void updateChannelValues(int inCH1, int inCH2, int inCH3);
     void playFrames(const QVariantList &frames);
 
 private slots:

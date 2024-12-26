@@ -61,7 +61,7 @@ Rectangle {
                     width: parent.width
                     height: width
                     value: 0.5
-                    onValueChanged: MobileClient.updateChannelValue(3, value)
+                    onValueChanged: MobileClient.updateChannelValues(-1, -1, value)
                 }
 
                 Text {

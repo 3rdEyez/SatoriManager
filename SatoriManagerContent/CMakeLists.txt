@@ -18,6 +18,8 @@ qt6_add_qml_module(SatoriManagerContent
         "ScreenMain.qml"
         "AppForm.ui.qml"
         "StyledButton.ui.qml"
+        "ControlStick.qml"
+        "ControlStickForm.ui.qml"
     RESOURCES
         "images/right.png"
         "images/circle.png"
@@ -33,7 +35,6 @@ qt6_add_qml_module(SatoriManagerContent
 
 # 设置 JSON 模板文件的路径
 set(PRESET_JSON_TEMPLATE ${CMAKE_CURRENT_SOURCE_DIR}/PresetActions.json)
-
 # 设置 JSON 文件生成路径（目标路径）
 set(PRESET_JSON_TARGET ${CMAKE_BINARY_DIR}/PresetActions.json)
 

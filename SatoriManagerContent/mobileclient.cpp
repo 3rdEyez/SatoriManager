@@ -92,11 +92,17 @@ void MobileClient::attemptReconnect()
     }
 }
 
-void MobileClient::updateChannelValues(int inCH1, int inCH2, int inCH3)
+void MobileClient::updateChannelValues(float inCH1, float inCH2, float inCH3)
 {
-    currentCH1 = inCH1;
-    currentCH2 = inCH2;
-    currentCH3 = inCH3;
+    if(inCH1<0){
+        currentCH1 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * inCH1;
+    }
+    if(inCH2<0){
+        currentCH2 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * inCH2;
+    }
+    if(inCH3<0){
+        currentCH3 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * inCH3;
+    }
     sendCommand(generatePwmControlMessage());
 }
 
@@ -255,24 +261,6 @@ void MobileClient::disconnectFromServer()
     emit disconnected();
 }
 
-// 更新通道值并发送PWM控制消息
-void MobileClient::updateChannelValue(int channel, float value)
-{
-    switch (channel)
-    {
-    case 1:
-        currentCH1 = qBound(MIN_PWM_VALUE, currentCH1 + int(value), MAX_PWM_VALUE);
-        break;
-    case 2:
-        currentCH2 = qBound(MIN_PWM_VALUE, currentCH2 + int(value), MAX_PWM_VALUE);
-        break;
-    case 3:
-        currentCH3 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * value;
-        break;
-    }
-    sendCommand(generatePwmControlMessage());
-}
-
 // 将模式字符串解析为 EyeMode 枚举值
 MobileClient::EyeMode MobileClient::parseModeString(const QString &modeString)
 {
@@ -311,30 +299,6 @@ QString MobileClient::modeToString(MobileClient::EyeMode mode)
     default:
         return "";
     }
-}
-
-// 控制眼球向上的方法
-void MobileClient::lookUp()
-{
-    updateChannelValue(2, Increment);
-}
-
-// 控制眼球向下的方法
-void MobileClient::lookDown()
-{
-    updateChannelValue(2, -Increment);
-}
-
-// 控制眼球向左的方法
-void MobileClient::lookLeft()
-{
-    updateChannelValue(1, -Increment);
-}
-
-// 控制眼球向右的方法
-void MobileClient::lookRight()
-{
-    updateChannelValue(1, Increment);
 }
 
 // 发送眨眼命令的方法
