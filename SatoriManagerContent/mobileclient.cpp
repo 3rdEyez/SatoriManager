@@ -170,7 +170,7 @@ void MobileClient::processPendingDatagrams()
 void MobileClient::findServer()
 {
     qDebug() << "Trying to find server...";
-    udpSocket->writeDatagram(ProtocolMessages::DiscoveryRequest, QHostAddress::LocalHost, 8888);
+    udpSocket->writeDatagram(ProtocolMessages::DiscoveryRequest, QHostAddress::Broadcast, 8888);
 }
 
 // 加载预设动作 JSON 文件
