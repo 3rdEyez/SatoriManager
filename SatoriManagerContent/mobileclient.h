@@ -42,7 +42,8 @@ public slots:
     Q_INVOKABLE bool loadPresetActions(const QString &filePath); // 加载预设动作 JSON 文件
     void setServerMode(MobileClient::EyeMode serverMode); // 远程更改服务器的模式
     void disconnectFromServer();                          // 断开与服务器的连接
-    void updateChannelValues(float inCH1 = -1, float inCH2 = -1, float inCH3 = -1);
+    void updateChannelValues(int inCH1, int inCH2, int inCH3);
+    void updateChannelValuesWithProportions(float inCH1 = -1, float inCH2 = -1, float inCH3 = -1);
     void executePresetAction(const QString &actionName);
 
     // 遥控器操作函数，用于控制眨眼

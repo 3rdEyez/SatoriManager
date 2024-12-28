@@ -74,7 +74,6 @@ Rectangle {
                     width: parent.width * 0.8
                     height:(parent.height - 4 * parent.spacing )/4
                     anchors.horizontalCenter: parent.horizontalCenter
-                    onClicked: ()=>{console.log(111)}
                 }
 
                 StyledButton {

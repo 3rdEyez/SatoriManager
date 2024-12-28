@@ -92,15 +92,18 @@ void MobileClient::attemptReconnect()
     }
 }
 
-void MobileClient::updateChannelValues(float inCH1, float inCH2, float inCH3)
+void MobileClient::updateChannelValuesWithProportions(float inCH1, float inCH2, float inCH3)
 {
-    if(inCH1<0){
+    if (inCH1 >= 0)
+    {
         currentCH1 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * inCH1;
     }
-    if(inCH2<0){
+    if (inCH2 >= 0)
+    {
         currentCH2 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * inCH2;
     }
-    if(inCH3<0){
+    if (inCH3 >= 0)
+    {
         currentCH3 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * inCH3;
     }
     sendCommand(generatePwmControlMessage());
@@ -109,6 +112,7 @@ void MobileClient::updateChannelValues(float inCH1, float inCH2, float inCH3)
 // 发送命令到服务器
 void MobileClient::sendCommand(const QString &command)
 {
+    qDebug() << "Trying to send message:" << command;
     if (robotIp.isEmpty())
     {
         qWarning() << "Robot server not found.";
@@ -116,7 +120,7 @@ void MobileClient::sendCommand(const QString &command)
     }
     QByteArray data = command.toUtf8();
     udpSocket->writeDatagram(data, QHostAddress(robotIp), robotPort);
-    qDebug() << "Sent message:" << command;
+    qDebug() << "Message sent.";
 }
 
 void MobileClient::processBatteryInfo(const QString &batteryLevel)
@@ -259,6 +263,18 @@ void MobileClient::disconnectFromServer()
     setMode(EyeMode::Unconnected);
     reconnectAttempts = 0; // 重置重连尝试计数
     emit disconnected();
+}
+
+void MobileClient::updateChannelValues(int inCH1, int inCH2, int inCH3)
+{
+
+    currentCH1 = qBound(MIN_PWM_VALUE, inCH1, MAX_PWM_VALUE);
+
+    currentCH2 = qBound(MIN_PWM_VALUE, inCH2, MAX_PWM_VALUE);
+
+    currentCH3 = qBound(MIN_PWM_VALUE, inCH3, MAX_PWM_VALUE);
+
+    sendCommand(generatePwmControlMessage());
 }
 
 // 将模式字符串解析为 EyeMode 枚举值

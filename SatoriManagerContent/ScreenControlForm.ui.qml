@@ -61,7 +61,7 @@ Rectangle {
                     width: parent.width
                     height: width
                     value: 0.5
-                    onValueChanged: MobileClient.updateChannelValues(-1, -1, value)
+                    onValueChanged: MobileClient.updateChannelValuesWithProportions(-1, -1, value)
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
 
