@@ -156,10 +156,11 @@ Rectangle {
         width: parent.width * 0.5
         height: width
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 80
+        anchors.bottomMargin: 50
         anchors.horizontalCenter: parent.horizontalCenter
         color: "#F17EB7"
         radius: width / 2
+        clip: false
 
         Joystick {
             id: control

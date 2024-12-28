@@ -4,7 +4,19 @@ import QtQuick 2.15
 ControlStickForm {
     id: joystick
     signal innerCircleMoved(point newCenter, real normalizedX, real normalizedY)
+    Connections {
+            target: MobileClient
+            function onBatteryInfoReceived(batteryPercentage){
+                joystick.breathing = true; // 开启呼吸效果
+                joystick.batteryLevel = batteryPercentage / 100; // 更新电量进度
+            }
 
+            function onDisconnected(){
+
+                joystick.breathing = false; // 关闭呼吸效果
+                joystick.batteryLevel = 0; // 重置电量进度
+            }
+    }
     onInnerCircleMoved: function(newCenter, normalizedX, normalizedY) {
         console.log("Inner Circle Center changed to: " + newCenter + ", Normalized X: " + normalizedX + ", Normalized Y: " + normalizedY);
         MobileClient.updateChannelValuesWithProportions(normalizedX, normalizedY);
