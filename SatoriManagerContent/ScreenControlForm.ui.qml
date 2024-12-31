@@ -9,8 +9,6 @@ import QtQuick.Controls 6.2
 
 Rectangle {
     id: mainRectangle
-    width: 640
-    height: 480
     color: "#f3f4f6"
     radius: 10
     border.color: "#d1d5db"
@@ -19,16 +17,18 @@ Rectangle {
     Rectangle {
         id: header
         width: parent.width
-        height: 50
+        height: parent.height * 0.1
         color: "#a78bfa"
         radius: 10
         anchors.top: parent.top
+
         Text {
             anchors.centerIn: parent
             text: qsTr("细节控制面板")
             color: "white"
-            font.pixelSize: 24
+            font.pixelSize: header.height * 0.4
             font.bold: true
+            font.family: "Arial"
         }
     }
 
@@ -36,11 +36,11 @@ Rectangle {
         id: mainLayout
         anchors.left: parent.left
         anchors.top: header.bottom
-        anchors.leftMargin: 20
-        anchors.topMargin: 10
-        spacing: 20
+        anchors.leftMargin: parent.width * 0.05
+        anchors.topMargin: parent.height * 0.02
+        spacing: parent.height * 0.03
         width: parent.width - 2 * anchors.leftMargin
-        height: parent.height - header.height - 30
+        height: parent.height - header.height - parent.height * 0.05
 
         // 眼皮控制部分
         Rectangle {
@@ -54,8 +54,9 @@ Rectangle {
 
             Column {
                 anchors.centerIn: parent
-                spacing: 5
-                width: 0.6 * parent.width
+                spacing: parent.height * 0.02
+                width: parent.width * 0.6
+
                 Dial {
                     id: eyeLidDial
                     width: parent.width
@@ -63,12 +64,23 @@ Rectangle {
                     value: 0.5
                     onValueChanged: MobileClient.updateChannelValuesWithProportions(-1, -1, value)
                     anchors.horizontalCenter: parent.horizontalCenter
+
+                    handle: Rectangle {
+                        width: eyeLidDial.width * 0.1
+                        height: width
+                        radius: width / 2
+                        color: "#a78bfa"
+                        border.color: "#7c3aed"
+                        border.width: 2
+                    }
                 }
 
                 Text {
                     text: qsTr("眼皮角度")
-                    font.pixelSize: 20
+                    font.pixelSize: parent.width * 0.06
                     anchors.horizontalCenter: parent.horizontalCenter
+                    font.family: "Arial"
+                    color: "#4b5563"
                 }
             }
         }
@@ -85,19 +97,30 @@ Rectangle {
 
             Column {
                 anchors.centerIn: parent
-                spacing: 10
+                spacing: parent.height * 0.02
 
                 Dial {
                     id: pupilDial
                     width: eyeLidDial.width
                     height: eyeLidDial.height
                     anchors.horizontalCenter: parent.horizontalCenter
+
+                    handle: Rectangle {
+                        width: pupilDial.width * 0.1
+                        height: width
+                        radius: width / 2
+                        color: "#a78bfa"
+                        border.color: "#7c3aed"
+                        border.width: 2
+                    }
                 }
 
                 Text {
                     text: qsTr("瞳孔大小")
-                    font.pixelSize: 20
+                    font.pixelSize: parent.width * 0.06
                     anchors.horizontalCenter: parent.horizontalCenter
+                    font.family: "Arial"
+                    color: "#4b5563"
                 }
             }
         }
