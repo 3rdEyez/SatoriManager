@@ -1,9 +1,3 @@
-/*
-This is a UI file (.ui.qml) that is intended to be edited in Qt Design Studio only.
-It is supposed to be strictly declarative and only uses a subset of QML. If you edit
-this file manually, you might introduce QML code that is not supported by Qt Design Studio.
-Check out https://doc.qt.io/qtcreator/creator-quick-ui-forms.html for details on .ui.qml files.
-*/
 import QtQuick 6.2
 import QtQuick.Controls 6.2
 
@@ -65,13 +59,25 @@ Rectangle {
                     onValueChanged: MobileClient.updateChannelValuesWithProportions(-1, -1, value)
                     anchors.horizontalCenter: parent.horizontalCenter
 
+                    background: Rectangle {
+                        radius: eyeLidDial.width / 2
+                        color: "#e0e7ff"
+                        border.color: "#a78bfa"
+                        border.width: 2
+                    }
+
                     handle: Rectangle {
-                        width: eyeLidDial.width * 0.1
+                        width: parent.width * 0.1
                         height: width
                         radius: width / 2
                         color: "#a78bfa"
                         border.color: "#7c3aed"
                         border.width: 2
+
+                        // 动态计算手柄位置，修正角度偏移
+                        property real correctedAngle: eyeLidDial.angle - 90 // 减去 90 度以修正起始位置
+                        x: (parent.width / 2) + (parent.width / 2 - width / 2) * Math.cos(correctedAngle * Math.PI / 180) - width / 2
+                        y: (parent.height / 2) + (parent.height / 2 - height / 2) * Math.sin(correctedAngle * Math.PI / 180) - height / 2
                     }
                 }
 
@@ -105,13 +111,25 @@ Rectangle {
                     height: eyeLidDial.height
                     anchors.horizontalCenter: parent.horizontalCenter
 
+                    background: Rectangle {
+                        radius: pupilDial.width / 2
+                        color: "#e0e7ff"
+                        border.color: "#a78bfa"
+                        border.width: 2
+                    }
+
                     handle: Rectangle {
-                        width: pupilDial.width * 0.1
+                        width: parent.width * 0.1
                         height: width
                         radius: width / 2
                         color: "#a78bfa"
                         border.color: "#7c3aed"
                         border.width: 2
+
+                        // 动态计算手柄位置，修正角度偏移
+                        property real correctedAngle: pupilDial.angle - 90 // 减去 90 度以修正起始位置
+                        x: (parent.width / 2) + (parent.width / 2 - width / 2) * Math.cos(correctedAngle * Math.PI / 180) - width / 2
+                        y: (parent.height / 2) + (parent.height / 2 - height / 2) * Math.sin(correctedAngle * Math.PI / 180) - height / 2
                     }
                 }
 
