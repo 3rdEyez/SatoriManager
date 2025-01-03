@@ -21,10 +21,7 @@ qt6_add_qml_module(SatoriManagerContent
         "ControlStick.qml"
         "ControlStickForm.ui.qml"
     RESOURCES
-        "images/right.png"
-        "images/circle.png"
-        "images/play-button-arrowhead.png"
-        "PresetActions.json"
+
     SOURCES
         "ProtocolMessages.h"
         "mobileclient.h"
@@ -33,20 +30,7 @@ qt6_add_qml_module(SatoriManagerContent
         "ActionPresetLoader.cpp"
 )
 
-# 设置 JSON 模板文件的路径
-set(PRESET_JSON_TEMPLATE ${CMAKE_CURRENT_SOURCE_DIR}/PresetActions.json)
-# 设置 JSON 文件生成路径（目标路径）
-set(PRESET_JSON_TARGET ${CMAKE_BINARY_DIR}/PresetActions.json)
 
-# 添加自定义命令，确保每次构建都复制 JSON 文件并覆盖原文件
-add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/dummy_file  # 用一个 dummy 文件触发每次执行
-    COMMAND ${CMAKE_COMMAND} -E copy ${PRESET_JSON_TEMPLATE} ${PRESET_JSON_TARGET}  # 每次构建覆盖目标文件
-    COMMENT "Copying PresetActions.json to ${CMAKE_BINARY_DIR}"
-)
-
-add_custom_target(copy_preset_json ALL DEPENDS ${CMAKE_BINARY_DIR}/dummy_file)
-add_dependencies(SatoriManagerContent copy_preset_json)
 
 set_property(TARGET SatoriManagerApp APPEND PROPERTY
     QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/android"
