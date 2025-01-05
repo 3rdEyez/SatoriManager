@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.qtproject.example" android:installLocation="auto" android:versionCode="-- %%INSERT_VERSION_CODE%% --" android:versionName="-- %%INSERT_VERSION_NAME%% --">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.thirdeyez.satorieyemanager" android:installLocation="auto" android:versionCode="1" android:versionName="1.0.0">
     <!-- %%INSERT_PERMISSIONS -->
     <!-- %%INSERT_FEATURES -->
     <supports-screens android:anyDensity="true" android:largeScreens="true" android:normalScreens="true" android:smallScreens="true"/>
-    <application android:name="org.qtproject.qt.android.bindings.QtApplication" android:hardwareAccelerated="true" android:label="-- %%INSERT_APP_NAME%% --" android:requestLegacyExternalStorage="true" android:allowBackup="true" android:fullBackupOnly="false" android:icon="@drawable/icon">
-        <activity android:name="org.qtproject.qt.android.bindings.QtActivity" android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density" android:launchMode="singleTop" android:screenOrientation="unspecified" android:exported="true" android:label="" android:theme="@style/splashScreenTheme">
+    <application android:name="org.qtproject.qt.android.bindings.QtApplication" android:hardwareAccelerated="true" android:label="SatoriManager" android:requestLegacyExternalStorage="true" android:allowBackup="true" android:fullBackupOnly="false" android:icon="@drawable/icon">
+        <activity android:name="org.qtproject.qt.android.bindings.QtActivity" android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density" android:launchMode="singleTop" android:screenOrientation="portrait" android:exported="true" android:label="SatoriManager" android:theme="@style/splashScreenTheme">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -13,10 +13,42 @@
             <meta-data android:name="android.app.arguments" android:value="-- %%INSERT_APP_ARGUMENTS%% --"/>
             <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
             <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
+            <meta-data android:name="android.app.splash_screen_drawable" android:resource="@drawable/splashscreen"/>
+            <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
         </activity>
 
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.qtprovider" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/qtprovider_paths"/>
         </provider>
     </application>
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 </manifest>
