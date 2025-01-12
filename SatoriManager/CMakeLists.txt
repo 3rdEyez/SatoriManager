@@ -13,10 +13,10 @@ qt6_add_qml_module(SatoriManager
     URI "SatoriManager"
     VERSION 1.0
     RESOURCE_PREFIX "/qt/qml"
+    RESOURCES "PresetActions.json"
     QML_FILES
         "Constants.qml"
-        "EventListSimulator.qml"
-        "EventListModel.qml"
+
 )
 
 
