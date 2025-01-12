@@ -1,9 +1,11 @@
 #include "ActionPresetLoader.h"
 #include <QDebug>
 #include <qfileinfo.h>
+#include <qresource.h>
+#include <qstandardpaths.h>
 
 // Define the file path constant
-const QString ActionPresetLoader::PRESET_FILE_PATH = "PresetActions.json";
+const QString ActionPresetLoader::PRESET_FILE_PATH = "://SatoriManagerContent/PresetActions.json";
 
 ActionPresetLoader::ActionPresetLoader(QObject *parent) : QObject(parent) {
     loadPresetActions(PRESET_FILE_PATH);
@@ -12,8 +14,8 @@ ActionPresetLoader::ActionPresetLoader(QObject *parent) : QObject(parent) {
 bool ActionPresetLoader::loadPresetActions(const QString &filePath)
 {
     QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly))
-    {
+
+    if (!file.open(QIODevice::ReadOnly)) {
         qWarning() << "Could not open JSON file:" << filePath;
         return false;
     }
@@ -22,16 +24,14 @@ bool ActionPresetLoader::loadPresetActions(const QString &filePath)
     file.close();
 
     QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (!doc.isObject())
-    {
+    if (!doc.isObject()) {
         qWarning() << "Invalid JSON format in file:" << filePath;
         return false;
     }
 
     actionsMap.clear();
     QJsonObject rootObj = doc.object();
-    for (const QString &key : rootObj.keys())
-    {
+    for (const QString &key : rootObj.keys()) {
         QJsonArray actionArray = rootObj.value(key).toArray();
         actionsMap.insert(key, parseAction(actionArray));
     }

@@ -1,14 +1,15 @@
 
 cmake_minimum_required(VERSION 3.21.1)
 
-option(LINK_INSIGHT "Link Qt Insight Tracker library" ON)
-option(BUILD_QDS_COMPONENTS "Build design studio components" ON)
+option(LINK_INSIGHT "Link Qt Insight Tracker library" OFF)
+option(BUILD_QDS_COMPONENTS "Build design studio components" OFF)
 
 project(SatoriManagerApp LANGUAGES CXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(QT_QML_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/qml)
 set(QML_IMPORT_PATH ${QT_QML_OUTPUT_DIRECTORY}
@@ -16,12 +17,22 @@ set(QML_IMPORT_PATH ${QT_QML_OUTPUT_DIRECTORY}
     FORCE
 )
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Qml Quick)
 qt_standard_project_setup()
 
+set(RESOURCE_FILES "resource.qrc")
 
 qt_add_executable(${CMAKE_PROJECT_NAME}
-    android/AndroidManifest.xml android/build.gradle android/res/values/libs.xml android/res/xml/qtprovider_paths.xml android/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.properties android/gradle.properties android/gradlew android/gradlew.bat)
+    android/AndroidManifest.xml
+    android/build.gradle
+    android/res/values/libs.xml
+    android/res/xml/qtprovider_paths.xml
+    android/gradle/wrapper/gradle-wrapper.jar
+    android/gradle/wrapper/gradle-wrapper.properties
+    android/gradle.properties
+    android/gradlew android/gradlew.bat
+    ${RESOURCE_FILES}   )
+
 qt_add_resources(${CMAKE_PROJECT_NAME} "configuration"
     PREFIX "/"
     FILES

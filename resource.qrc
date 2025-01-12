@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>SatoriManagerContent/PresetActions.json</file>
+    </qresource>
+</RCC>
