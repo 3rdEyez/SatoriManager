@@ -52,7 +52,7 @@ Item {
             var centerX = width / 2;
             var centerY = height / 2;
             var outerRadius = joystick.outerCircleRadius - joystick.progressBarWidth / 3;
-            var progressRadius = outerRadius; // 进度条半径，确保内接
+            var progressRadius = outerRadius; // 进度条半径
             var startAngle = Math.PI / 2; // 从最下方开始
             var endAngleOffset = Math.PI * joystick.batteryLevel; // 根据进度计算角度偏移量
 
@@ -82,8 +82,6 @@ Item {
         height: joystick.innerCircleRadius * 2
         radius: joystick.innerCircleRadius
         color: "#9C57A5"
-        //border.color: "white"
-        //border.width: 2 // 边框宽度
         x: joystick.innerCircleCenter.x - joystick.innerCircleRadius
         y: joystick.innerCircleCenter.y - joystick.innerCircleRadius
         antialiasing: true // 启用抗锯齿

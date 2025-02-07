@@ -59,11 +59,14 @@ ControlStickForm {
     }
 
     controlArea.onReleased: {
-        innerCircleCenter = outerCircleCenter;
+        if (globalState.resetStickState) {
+            innerCircleCenter = outerCircleCenter;
 
-        var normalizedX = mapToNormalized(innerCircleCenter.x, outerCircleCenter.x - outerCircleRadius, outerCircleCenter.x + outerCircleRadius);
-        var normalizedY = mapToNormalized(innerCircleCenter.y, outerCircleCenter.y - outerCircleRadius, outerCircleCenter.y + outerCircleRadius);
+            var normalizedX = mapToNormalized(innerCircleCenter.x, outerCircleCenter.x - outerCircleRadius, outerCircleCenter.x + outerCircleRadius);
+            var normalizedY = mapToNormalized(innerCircleCenter.y, outerCircleCenter.y - outerCircleRadius, outerCircleCenter.y + outerCircleRadius);
 
-        joystick.innerCircleMoved(innerCircleCenter, normalizedX, normalizedY);
+            joystick.innerCircleMoved(innerCircleCenter, normalizedX, normalizedY);
+        }
+
     }
 }

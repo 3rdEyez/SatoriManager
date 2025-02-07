@@ -9,7 +9,10 @@ Window {
 
     visible: true
     title: "SatoriManager"
-
+    QtObject {
+            id: globalState
+            property bool resetStickState: true  // 定义全局属性
+        }
     AppForm{
         width: parent.width
         height: parent.height

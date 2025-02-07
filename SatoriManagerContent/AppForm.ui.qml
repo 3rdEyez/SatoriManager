@@ -20,6 +20,9 @@ Rectangle {
         ScreenControl {
             id: controlScreen
         }
+        Setting{
+            id: setting
+        }
     }
 
     PageIndicator {
