@@ -1,6 +1,7 @@
 #ifndef MOBILECLIENT_H
 #define MOBILECLIENT_H
 
+#include <cmath>  // For std::normal_distribution
 #include <QObject>
 #include <QUdpSocket>
 #include <QTimer>
@@ -45,7 +46,7 @@ public slots:
     void updateChannelValues(int inCH1, int inCH2, int inCH3);
     void updateChannelValuesWithProportions(float inCH1 = -1, float inCH2 = -1, float inCH3 = -1);
     void executePresetAction(const QString &actionName);
-
+    void setAutoModeParameters(int changeRange, int interval);
     // 遥控器操作函数，用于控制眨眼
     void wink();
 
@@ -55,6 +56,12 @@ signals:
     void batteryInfoReceived(int batteryPercentage); // 收到来自觉之瞳的电量信息
 
 private:
+    // 添加成员变量
+    QTimer *autoModeTimer;
+    int autoModeChangeRange; // 控制PWM值变化的范围
+    int autoModeInterval;    // 自动模式更新间隔（毫秒）
+    std::default_random_engine randomEngine;
+
     ActionPresetLoader *actionLoader; // 读取预设动作用的类
     MobileClient::EyeMode m_mode;     // 当前客户端模式
     QUdpSocket *udpSocket;            // 用于通信的 UDP 套接字
@@ -82,6 +89,10 @@ private:
     void attemptReconnect();
     void playFrames(const QVariantList &frames);
 
+    // 自动模式方法
+    void startAutoMode();
+    void stopAutoMode();
+    void generateAutoPWM();
 private slots:
     void processPendingDatagrams();              // 处理接收到的 UDP 消息
     void checkConnection();                      // 通过发送心跳包检查连接状态

@@ -30,6 +30,12 @@ MobileClient::MobileClient(QObject *parent) : QObject(parent),
     reconnectTimer->setInterval(10000); // 设置重连间隔为5秒
     connect(reconnectTimer, &QTimer::timeout, this, &MobileClient::attemptReconnect);
 
+    //初始化自动模式定时器
+    autoModeTimer = new QTimer(this);
+    connect(autoModeTimer, &QTimer::timeout, this, &MobileClient::generateAutoPWM);
+    autoModeChangeRange = 500;
+    autoModeInterval = 1000;
+
     // 寻找觉之瞳服务器
     findServer();
 }
@@ -52,7 +58,18 @@ void MobileClient::setMode(MobileClient::EyeMode newMode)
 {
     if (m_mode != newMode)
     {
+        // 先停止之前的模式相关操作
+        if (m_mode == EyeMode::Auto) {
+            stopAutoMode();
+        }
+
         m_mode = newMode;
+
+        // 启动新模式相关操作
+        if (newMode == EyeMode::Auto) {
+            startAutoMode();
+        }
+
         emit modeChanged();
     }
 }
@@ -174,6 +191,7 @@ void MobileClient::processPendingDatagrams()
 void MobileClient::findServer()
 {
     qDebug() << "Trying to find server...";
+    udpSocket->writeDatagram(ProtocolMessages::DiscoveryRequest, QHostAddress::Broadcast, 8888);
     udpSocket->writeDatagram(ProtocolMessages::DiscoveryRequest, QHostAddress::LocalHost, 8888);
 }
 
@@ -259,6 +277,11 @@ void MobileClient::disconnectFromServer()
         heartbeatTimer->stop();
     }
 
+    // 停止自动模式
+    if (autoModeTimer->isActive()) {
+        autoModeTimer->stop();
+    }
+
     robotIp.clear();
     setMode(EyeMode::Unconnected);
     reconnectAttempts = 0; // 重置重连尝试计数
@@ -328,4 +351,55 @@ void MobileClient::wink()
 QString MobileClient::generatePwmControlMessage()
 {
     return QString(ProtocolMessages::PwmControlPrefix).arg(currentCH1).arg(currentCH2).arg(currentCH3);
+}
+
+void MobileClient::startAutoMode()
+{
+    autoModeTimer->start(autoModeInterval);
+    qDebug() << "Auto mode started with parameters:"
+             << "Change range:" << autoModeChangeRange
+             << "Interval:" << autoModeInterval;
+}
+
+void MobileClient::stopAutoMode()
+{
+    autoModeTimer->stop();
+    qDebug() << "Auto mode stopped";
+}
+
+void MobileClient::setAutoModeParameters(int changeRange, int interval)
+{
+    autoModeChangeRange = qBound(0, changeRange, 1000); // 限制变化范围0-500
+    autoModeInterval = qBound(10, interval, 5000);     // 限制间隔10-5000ms
+    qDebug() << "Updated auto mode parameters:"
+             << "Change range:" << autoModeChangeRange
+             << "Interval:" << autoModeInterval;
+
+    // 如果当前处于自动模式，立即应用新间隔
+    if (m_mode == EyeMode::Auto) {
+        autoModeTimer->setInterval(autoModeInterval);
+    }
+}
+
+void MobileClient::generateAutoPWM()
+{
+    // 假设当前的中心位置为眼睛的正常直视位置
+    int centerCH1 = (MIN_PWM_VALUE + MAX_PWM_VALUE) / 2;
+    int centerCH2 = (MIN_PWM_VALUE + MAX_PWM_VALUE) / 2;
+    int centerCH3 = (MIN_PWM_VALUE + MAX_PWM_VALUE) / 2;
+
+    // 使用正态分布生成目标位置，模拟眼睛偶尔偏离中心位置
+    float mean = 0.0f;     // 均值为0，表示目标偏移围绕中心位置分布
+
+    // 生成正态分布随机数，模拟眼睛偏移
+    float randomOffsetCH1 = std::normal_distribution<float>(mean, autoModeChangeRange)(randomEngine);
+    float randomOffsetCH2 = std::normal_distribution<float>(mean, autoModeChangeRange)(randomEngine);
+    float randomOffsetCH3 = std::normal_distribution<float>(mean, autoModeChangeRange)(randomEngine);
+
+    // 计算目标位置，确保其在合理范围内
+    int newCH1 = static_cast<int>(centerCH1 + randomOffsetCH1);
+    int newCH2 = static_cast<int>(centerCH2 + randomOffsetCH2);
+    int newCH3 = static_cast<int>(centerCH3 + randomOffsetCH3);
+
+    updateChannelValues(newCH1,newCH2,currentCH3);
 }
