@@ -68,6 +68,15 @@ Rectangle {
                 }
 
                 StyledButton {
+                    id: button_Manual
+                    text: qsTr("手动模式")
+                    font.pixelSize: row.buttonFontSize
+                    width: button_auto.width
+                    height: button_auto.height
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+
+                StyledButton {
                     id: button_sleep
                     text: qsTr("睡眠模式")
                     font.pixelSize: row.buttonFontSize
@@ -79,15 +88,6 @@ Rectangle {
                 StyledButton {
                     id: button_facialRecognition
                     text: qsTr("人脸识别")
-                    font.pixelSize: row.buttonFontSize
-                    width: button_auto.width
-                    height: button_auto.height
-                    anchors.horizontalCenter: parent.horizontalCenter
-                }
-
-                StyledButton {
-                    id: button_Manual
-                    text: qsTr("手动模式")
                     font.pixelSize: row.buttonFontSize
                     width: button_auto.width
                     height: button_auto.height

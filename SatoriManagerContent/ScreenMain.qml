@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import SatoriManager 1.0
 
 ScreenMainForm {
