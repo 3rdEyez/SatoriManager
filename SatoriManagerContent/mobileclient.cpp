@@ -1,44 +1,203 @@
+
 #include "mobileclient.h"
 #include "ProtocolMessages.h"
 #include "ActionPresetLoader.h"
 #include <QHostAddress>
 #include <QDebug>
 #include <QNetworkDatagram>
-
+#include <QRandomGenerator>
 const int MobileClient::MIN_PWM_VALUE;
 const int MobileClient::MAX_PWM_VALUE;
+// 常量定义
+namespace {
+const quint16 DISCOVERY_PORT = 8888;
+const quint16 CLIENT_PORT = 8889;
+const int HEARTBEAT_INTERVAL = 20000;
+const int MAX_HEARTBEAT_TIMEOUT = 3;
+const int RECONNECT_INTERVAL = 10000;
+const int MAX_RECONNECT_ATTEMPTS = 5;
+const int DEFAULT_SMOOTH_DURATION = 200;
+const int DEFAULT_WAIT_PERIOD = 5000;
+}
 
-// 构造函数：初始化成员变量和UDP通信设置
 MobileClient::MobileClient(QObject *parent) : QObject(parent),
-                                              actionLoader(new ActionPresetLoader(this)),
-                                              udpSocket(new QUdpSocket(this)),
-                                              heartbeatTimer(new QTimer(this)),
-                                              reconnectTimer(new QTimer(this)),
-                                              m_mode(EyeMode::Unconnected),
-                                              currentCH1(1500), // 默认初始值
-                                              currentCH2(1500), // 默认初始值
-                                              currentCH3(1500)  // 默认初始值
+    actionLoader(new ActionPresetLoader(this)),
+    udpSocket(new QUdpSocket(this)),
+    m_mode(EyeMode::Unconnected),
+    currentCH1(1500), currentCH2(1500), currentCH3(1500),
+    randomEngine(QRandomGenerator::global()->generate()),
+    autoModeInterval(DEFAULT_WAIT_PERIOD),
+    autoModeChangeRange(250)
 {
-    udpSocket->bind(QHostAddress::Any, 8889);
-    connect(udpSocket, &QUdpSocket::readyRead, this, &MobileClient::processPendingDatagrams);
-
-    // 初始化心跳定时器并设置定时任务
-    connect(heartbeatTimer, &QTimer::timeout, this, &MobileClient::checkConnection);
-    heartbeatTimer->start(20000);
-
-    // 初始化重连定时器
-    reconnectTimer->setInterval(10000); // 设置重连间隔为5秒
-    connect(reconnectTimer, &QTimer::timeout, this, &MobileClient::attemptReconnect);
-
-    //初始化自动模式定时器
-    autoModeTimer = new QTimer(this);
-    connect(autoModeTimer, &QTimer::timeout, this, &MobileClient::generateAutoPWM);
-    autoModeChangeRange = 500;
-    autoModeInterval = 1000;
-
-    // 寻找觉之瞳服务器
+    setupNetwork();
+    setupTimers();
     findServer();
 }
+
+// 网络相关初始化
+void MobileClient::setupNetwork()
+{
+    udpSocket->bind(QHostAddress::Any, CLIENT_PORT);
+    connect(udpSocket, &QUdpSocket::readyRead, this, &MobileClient::processPendingDatagrams);
+}
+
+// 定时器初始化
+void MobileClient::setupTimers()
+{
+    heartbeatTimer = new QTimer(this);
+    heartbeatTimer->setInterval(HEARTBEAT_INTERVAL);
+    connect(heartbeatTimer, &QTimer::timeout, this, &MobileClient::checkConnection);
+    heartbeatTimer->start();
+
+    reconnectTimer = new QTimer(this);
+    reconnectTimer->setInterval(RECONNECT_INTERVAL);
+    connect(reconnectTimer, &QTimer::timeout, this, &MobileClient::attemptReconnect);
+
+    autoModeTimer = new QTimer(this);
+    connect(autoModeTimer, &QTimer::timeout, this, &MobileClient::generateAutoPWM);
+
+    m_autoWinkTimer = new QTimer(this);
+    m_autoWinkTimer->setSingleShot(true); // 单次触发模式
+    connect(m_autoWinkTimer, &QTimer::timeout, this, &MobileClient::onAutoWinkTimeout);
+}
+
+// 处理接收数据报的主逻辑
+void MobileClient::processPendingDatagrams()
+{
+    while (udpSocket->hasPendingDatagrams()) {
+        QNetworkDatagram datagram = udpSocket->receiveDatagram();
+        const QString message = QString::fromUtf8(datagram.data());
+
+        if (message.startsWith(ProtocolMessages::DiscoveryResponse)) {
+            handleDiscoveryResponse(datagram, message);
+        } else if (message.startsWith(ProtocolMessages::HeartbeatResponse)) {
+            handleHeartbeatResponse(message);
+        } else if (message.startsWith(ProtocolMessages::SetModeSuccessPrefix)) {
+            handleModeChangeResponse(message);
+        }
+    }
+}
+
+// 处理服务器发现响应
+void MobileClient::handleDiscoveryResponse(const QNetworkDatagram& datagram, const QString& message)
+{
+    QStringList parts = message.split(',');
+    robotIp = datagram.senderAddress().toString();
+    robotPort = datagram.senderPort();
+
+    qDebug() << "Discovered server at:" << robotIp << ":" << robotPort;
+
+    if (parts.size() > 1) {
+        processBatteryInfo(parts[1]);
+    }
+
+    setMode(EyeMode::Manual);
+    scheduleNextWink();
+    heartbeatTimeout = 0;
+}
+
+// 处理心跳响应
+void MobileClient::handleHeartbeatResponse(const QString& message)
+{
+    heartbeatTimeout = 0;
+    QStringList parts = message.split(',');
+    if (parts.size() > 1) {
+        processBatteryInfo(parts[1]);
+    }
+}
+
+// 处理模式变更响应
+void MobileClient::handleModeChangeResponse(const QString& message)
+{
+    const QString newModeString = message.section(':', 1, 1);
+    const EyeMode newMode = parseModeString(newModeString);
+
+    if (newMode != EyeMode::Unconnected) {
+        setMode(newMode);
+        qDebug() << "Mode changed to:" << newModeString;
+    }
+}
+
+// 更新通道值（核心逻辑）
+void MobileClient::updateChannelValues(int inCH1, int inCH2, int inCH3, bool smooth, int duration)
+{
+    currentCH1 = qBound(MIN_PWM_VALUE, inCH1, MAX_PWM_VALUE);
+    currentCH2 = qBound(MIN_PWM_VALUE, inCH2, MAX_PWM_VALUE);
+    currentCH3 = qBound(MIN_PWM_VALUE, inCH3, MAX_PWM_VALUE);
+
+    sendCommand(generatePwmControlMessage(smooth, duration));
+}
+
+// 生成自动模式PWM值
+void MobileClient::generateAutoPWM()
+{
+    constexpr int center = (MIN_PWM_VALUE + MAX_PWM_VALUE) / 2;
+    std::normal_distribution<float> dist(0.0f, autoModeChangeRange);
+
+    const int newCH1 = center + static_cast<int>(dist(randomEngine));
+    const int newCH2 = center + static_cast<int>(dist(randomEngine));
+
+    // 自动模式使用非平滑移动
+    updateChannelValues(newCH1, newCH2, currentCH3, true, DEFAULT_SMOOTH_DURATION);
+}
+
+// 播放动作关键帧
+void MobileClient::playFrames(const QVariantList &frames)
+{
+    for (const auto& frame : frames) {
+        const auto frameData = frame.toMap();
+        float ch1 = frameData["CH1"].toDouble();
+        float ch2 = frameData["CH2"].toDouble();
+        float ch3 = frameData["CH3"].toDouble();
+        const int duration = frameData["duration"].toInt();
+        // 使用平滑移动并指定持续时间
+        updateChannelValuesWithProportions(ch1, ch2, ch3, true, DEFAULT_SMOOTH_DURATION);
+
+        // 等待当前帧的持续时间
+        QThread::msleep(duration);
+    }
+}
+
+void MobileClient::setAutoWinkEnabled(bool enabled)
+{
+    if (m_autoWinkEnabled != enabled) {
+        m_autoWinkEnabled = enabled;
+
+        if (enabled) {
+            // 启用时启动第一次眨眼
+            scheduleNextWink();
+        } else {
+            // 禁用时停止定时器
+            m_autoWinkTimer->stop();
+        }
+        emit autoWinkEnabled();
+    }
+}
+
+void MobileClient::onAutoWinkTimeout()
+{
+    if (!m_autoWinkEnabled) return;
+
+    // 执行眨眼动作
+    wink();
+
+    // 安排下一次眨眼
+    scheduleNextWink();
+}
+
+void MobileClient::scheduleNextWink()
+{
+    if(mode() == EyeMode::Unconnected){
+        return;
+    }
+    // 生成带随机波动的间隔（4500-5500ms）
+    int interval = m_baseWinkInterval
+                   + QRandomGenerator::global()->bounded(-m_winkIntervalJitter, m_winkIntervalJitter);
+
+    m_autoWinkTimer->start(interval);
+    qDebug() << "Next wink scheduled in" << interval << "ms";
+}
+
 
 // 获取当前模式
 MobileClient::EyeMode MobileClient::mode() const
@@ -109,7 +268,7 @@ void MobileClient::attemptReconnect()
     }
 }
 
-void MobileClient::updateChannelValuesWithProportions(float inCH1, float inCH2, float inCH3)
+void MobileClient::updateChannelValuesWithProportions(float inCH1, float inCH2, float inCH3, bool smooth, int duration)
 {
     if (inCH1 >= 0)
     {
@@ -123,7 +282,7 @@ void MobileClient::updateChannelValuesWithProportions(float inCH1, float inCH2, 
     {
         currentCH3 = MIN_PWM_VALUE + (MAX_PWM_VALUE - MIN_PWM_VALUE) * inCH3;
     }
-    sendCommand(generatePwmControlMessage());
+    sendCommand(generatePwmControlMessage(smooth, duration));
 }
 
 // 发送命令到服务器
@@ -144,47 +303,6 @@ void MobileClient::processBatteryInfo(const QString &batteryLevel)
 {
     int Percentage = batteryLevel.toInt();
     emit batteryInfoReceived(Percentage);
-}
-void MobileClient::processPendingDatagrams()
-{
-    while (udpSocket->hasPendingDatagrams())
-    {
-        QNetworkDatagram datagram = udpSocket->receiveDatagram();
-        QString message = QString::fromUtf8(datagram.data());
-
-        if (message.startsWith(ProtocolMessages::DiscoveryResponse))
-        {
-            QStringList messageParts = message.split(',');
-            robotIp = datagram.senderAddress().toString();
-            robotPort = datagram.senderPort();
-            qDebug() << "Robot server found at:" << robotIp << ":" << robotPort;
-            if (messageParts.size() > 1)
-            {
-                processBatteryInfo(messageParts[1]);
-            }
-            setMode(MobileClient::EyeMode::Auto);
-            heartbeatTimeout = 0;
-        }
-        else if (message.startsWith(ProtocolMessages::HeartbeatResponse))
-        {
-            heartbeatTimeout = 0;
-            QStringList messageParts = message.split(',');
-            if (messageParts.size() > 1)
-            {
-                processBatteryInfo(messageParts[1]);
-            }
-        }
-        else if (message.startsWith(ProtocolMessages::SetModeSuccessPrefix))
-        {
-            QString newModeString = message.section(':', 1, 1);
-            MobileClient::EyeMode newMode = parseModeString(newModeString);
-            if (newMode != MobileClient::EyeMode::Unconnected)
-            {
-                setMode(newMode);
-                qDebug() << "Mode successfully changed to:" << newModeString;
-            }
-        }
-    }
 }
 
 // 发现服务器的方法
@@ -221,25 +339,6 @@ void MobileClient::executePresetAction(const QString &actionName)
     playFrames(frames);
 }
 
-// 播放关键帧数据
-void MobileClient::playFrames(const QVariantList &frames)
-{
-    for (const QVariant &frame : frames)
-    {
-        QVariantMap frameData = frame.toMap();
-        int ch1Value = frameData["CH1"].toInt();
-        int ch2Value = frameData["CH2"].toInt();
-        int ch3Value = frameData["CH3"].toInt();
-        int duration = frameData["duration"].toInt();
-
-        // 使用当前帧的数据更新通道值
-        updateChannelValues(ch1Value, ch2Value, ch3Value);
-
-        // 等待当前帧的持续时间
-        QThread::msleep(duration);
-    }
-}
-
 // 发送设置模式的命令
 void MobileClient::setServerMode(MobileClient::EyeMode serverMode)
 {
@@ -250,6 +349,10 @@ void MobileClient::setServerMode(MobileClient::EyeMode serverMode)
     }
     if (serverMode == m_mode)
     {
+        return;
+    }
+    if(serverMode == EyeMode::Auto || serverMode == EyeMode::Manual){
+        setMode(serverMode);
         return;
     }
     QString modeCommand = QString(ProtocolMessages::SetModePrefix) + modeToString(serverMode);
@@ -286,18 +389,6 @@ void MobileClient::disconnectFromServer()
     setMode(EyeMode::Unconnected);
     reconnectAttempts = 0; // 重置重连尝试计数
     emit disconnected();
-}
-
-void MobileClient::updateChannelValues(int inCH1, int inCH2, int inCH3)
-{
-
-    currentCH1 = qBound(MIN_PWM_VALUE, inCH1, MAX_PWM_VALUE);
-
-    currentCH2 = qBound(MIN_PWM_VALUE, inCH2, MAX_PWM_VALUE);
-
-    currentCH3 = qBound(MIN_PWM_VALUE, inCH3, MAX_PWM_VALUE);
-
-    sendCommand(generatePwmControlMessage());
 }
 
 // 将模式字符串解析为 EyeMode 枚举值
@@ -343,14 +434,24 @@ QString MobileClient::modeToString(MobileClient::EyeMode mode)
 // 发送眨眼命令的方法
 void MobileClient::wink()
 {
-    sendCommand("WINK");
-    qDebug() << "Sent command to wink";
+    bool chooseFirst = QRandomGenerator::global()->bounded(2);
+
+    if(chooseFirst) {
+        executePresetAction("wink");
+    } else {
+        executePresetAction("wink2");
+    }
 }
 
 // 生成PWM控制消息字符串
-QString MobileClient::generatePwmControlMessage()
+QString MobileClient::generatePwmControlMessage(bool bShouldSmooth, int MS)
 {
-    return QString(ProtocolMessages::PwmControlPrefix).arg(currentCH1).arg(currentCH2).arg(currentCH3);
+    if(bShouldSmooth){
+        return QString(ProtocolMessages::SmoothPwmControlPrefix).arg(currentCH1).arg(currentCH2).arg(currentCH3).arg(MS);
+    }
+    else{
+        return QString(ProtocolMessages::PwmControlPrefix).arg(currentCH1).arg(currentCH2).arg(currentCH3);
+    }
 }
 
 void MobileClient::startAutoMode()
@@ -379,27 +480,4 @@ void MobileClient::setAutoModeParameters(int changeRange, int interval)
     if (m_mode == EyeMode::Auto) {
         autoModeTimer->setInterval(autoModeInterval);
     }
-}
-
-void MobileClient::generateAutoPWM()
-{
-    // 假设当前的中心位置为眼睛的正常直视位置
-    int centerCH1 = (MIN_PWM_VALUE + MAX_PWM_VALUE) / 2;
-    int centerCH2 = (MIN_PWM_VALUE + MAX_PWM_VALUE) / 2;
-    int centerCH3 = (MIN_PWM_VALUE + MAX_PWM_VALUE) / 2;
-
-    // 使用正态分布生成目标位置，模拟眼睛偶尔偏离中心位置
-    float mean = 0.0f;     // 均值为0，表示目标偏移围绕中心位置分布
-
-    // 生成正态分布随机数，模拟眼睛偏移
-    float randomOffsetCH1 = std::normal_distribution<float>(mean, autoModeChangeRange)(randomEngine);
-    float randomOffsetCH2 = std::normal_distribution<float>(mean, autoModeChangeRange)(randomEngine);
-    float randomOffsetCH3 = std::normal_distribution<float>(mean, autoModeChangeRange)(randomEngine);
-
-    // 计算目标位置，确保其在合理范围内
-    int newCH1 = static_cast<int>(centerCH1 + randomOffsetCH1);
-    int newCH2 = static_cast<int>(centerCH2 + randomOffsetCH2);
-    int newCH3 = static_cast<int>(centerCH3 + randomOffsetCH3);
-
-    updateChannelValues(newCH1,newCH2,currentCH3);
 }

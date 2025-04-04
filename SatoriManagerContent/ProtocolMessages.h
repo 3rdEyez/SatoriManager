@@ -15,6 +15,7 @@ constexpr auto SetModePrefix = "SET_MODE:";
 constexpr auto SetModeSuccessPrefix = "SET_MODE_SUCCESS:";
 
 constexpr auto PwmControlPrefix = "CH1:%1CH2:%2CH3:%3";
+constexpr auto SmoothPwmControlPrefix = "SMOOTH:CH1:%1CH2:%2CH3:%3MS:%4";
 }
 
 #endif // PROTOCOLMESSAGES_H

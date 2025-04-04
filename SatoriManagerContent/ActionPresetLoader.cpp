@@ -48,9 +48,13 @@ QVariantMap ActionPresetLoader::parseAction(const QJsonArray &actionArray)
     {
         QJsonObject frameObj = frameValue.toObject();
         QVariantMap frameData;
-        frameData.insert("CH1", frameObj["CH1"].toInt());
-        frameData.insert("CH2", frameObj["CH2"].toInt());
-        frameData.insert("CH3", frameObj["CH3"].toInt());
+
+        // 读取浮点数值（支持int/float类型）
+        frameData.insert("CH1", frameObj["CH1"].toDouble());
+        frameData.insert("CH2", frameObj["CH2"].toDouble());
+        frameData.insert("CH3", frameObj["CH3"].toDouble());
+
+        // 保持duration为整数
         frameData.insert("duration", frameObj["duration"].toInt());
         framesList.append(frameData);
     }
@@ -59,7 +63,6 @@ QVariantMap ActionPresetLoader::parseAction(const QJsonArray &actionArray)
     actionData.insert("frames", framesList);
     return actionData;
 }
-
 
 QStringList ActionPresetLoader::getActionNames() const
 {

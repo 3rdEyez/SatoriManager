@@ -7,6 +7,7 @@ Rectangle {
     property alias rangeSlider: rangeSlider
     property alias intervalSlider: intervalSlider
     property alias resetStick: resetStick
+    property alias winkSwitch: winkSwitch
     Rectangle {
         id: header
         width: parent.width
@@ -117,44 +118,69 @@ Rectangle {
                 }
             }
 
-            // 摇杆设置
+            // 操作设置
             ColumnLayout {
                 spacing: 12
 
                 Label {
-                    text: qsTr("摇杆设置")
+                    text: qsTr("动作设置")
                     color: "#2d3748"
                 }
 
-                RowLayout {
-                    spacing: 16
+                Label {
+                    text: qsTr("松开自动复位:")
+                    color: "#4a5568"
+                }
 
-                    Label {
-                        text: qsTr("松开自动复位:")
-                        color: "#4a5568"
+                Switch {
+                    id: resetStick
+                    checked: true
+
+                    indicator: Rectangle {
+                        implicitWidth: 48
+                        implicitHeight: 28
+                        radius: 14
+                        color: resetStick.checked ? "#a78bfa" : "#e2e8f0"
+                        border.color: resetStick.checked ? "#8e73fa" : "#cbd5e0"
+
+                        Rectangle {
+                            x: resetStick.checked ? parent.width - width - 4 : 4
+                            y: 4
+                            width: 20
+                            height: 20
+                            radius: 10
+                            color: resetStick.down ? "#ffffff" : "#f8fafc"
+                            border.color: Qt.darker(parent.color, 1.2)
+                            Behavior on x { NumberAnimation { duration: 100 } }
+                        }
                     }
+                }
 
-                    Switch {
-                        id: resetStick
-                        checked: true
+                Label {
+                    text: qsTr("启用自动眨眼:")
+                    color: "#4a5568"
+                }
 
-                        indicator: Rectangle {
-                            implicitWidth: 48
-                            implicitHeight: 28
-                            radius: 14
-                            color: resetStick.checked ? "#a78bfa" : "#e2e8f0"
-                            border.color: resetStick.checked ? "#8e73fa" : "#cbd5e0"
+                Switch {
+                    id: winkSwitch
+                    checked: true
 
-                            Rectangle {
-                                x: resetStick.checked ? parent.width - width - 4 : 4
-                                y: 4
-                                width: 20
-                                height: 20
-                                radius: 10
-                                color: resetStick.down ? "#ffffff" : "#f8fafc"
-                                border.color: Qt.darker(parent.color, 1.2)
-                                Behavior on x { NumberAnimation { duration: 100 } }
-                            }
+                    indicator: Rectangle {
+                        implicitWidth: 48
+                        implicitHeight: 28
+                        radius: 14
+                        color: winkSwitch.checked ? "#a78bfa" : "#e2e8f0"
+                        border.color: winkSwitch.checked ? "#8e73fa" : "#cbd5e0"
+
+                        Rectangle {
+                            x: winkSwitch.checked ? parent.width - width - 4 : 4
+                            y: 4
+                            width: 20
+                            height: 20
+                            radius: 10
+                            color: winkSwitch.down ? "#ffffff" : "#f8fafc"
+                            border.color: Qt.darker(parent.color, 1.2)
+                            Behavior on x { NumberAnimation { duration: 100 } }
                         }
                     }
                 }

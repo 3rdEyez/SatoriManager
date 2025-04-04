@@ -43,24 +43,31 @@ public slots:
     Q_INVOKABLE bool loadPresetActions(const QString &filePath); // 加载预设动作 JSON 文件
     void setServerMode(MobileClient::EyeMode serverMode); // 远程更改服务器的模式
     void disconnectFromServer();                          // 断开与服务器的连接
-    void updateChannelValues(int inCH1, int inCH2, int inCH3);
-    void updateChannelValuesWithProportions(float inCH1 = -1, float inCH2 = -1, float inCH3 = -1);
+    void updateChannelValues(int inCH1, int inCH2, int inCH3, bool smooth = false, int duration = 500);
+    void updateChannelValuesWithProportions(float inCH1 = -1, float inCH2 = -1, float inCH3 = -1, bool smooth = false, int duration = 500);
     void executePresetAction(const QString &actionName);
     void setAutoModeParameters(int changeRange, int interval);
-    // 遥控器操作函数，用于控制眨眼
-    void wink();
-
+    // 自动眨眼控制方法
+    Q_INVOKABLE void setAutoWinkEnabled(bool enabled);
+    Q_INVOKABLE bool autoWinkEnabled() const { return m_autoWinkEnabled; }
 signals:
     void modeChanged();                              // 模式更改时发出信号
     void disconnected();                             // 发出断开连接信号
     void batteryInfoReceived(int batteryPercentage); // 收到来自觉之瞳的电量信息
 
+protected:
+    void wink();
 private:
     // 添加成员变量
-    QTimer *autoModeTimer;
+    QTimer *autoModeTimer;   // 定时器用于自动模式
     int autoModeChangeRange; // 控制PWM值变化的范围
     int autoModeInterval;    // 自动模式更新间隔（毫秒）
     std::default_random_engine randomEngine;
+
+    QTimer* m_autoWinkTimer;
+    bool m_autoWinkEnabled = false;
+    const int m_baseWinkInterval = 5000; // 基准间隔5秒
+    const int m_winkIntervalJitter = 500; // 随机波动±500ms
 
     ActionPresetLoader *actionLoader; // 读取预设动作用的类
     MobileClient::EyeMode m_mode;     // 当前客户端模式
@@ -82,7 +89,7 @@ private:
 private:
     MobileClient::EyeMode parseModeString(const QString &modeString); // 将字符串解析为 EyeMode 枚举
     QString modeToString(MobileClient::EyeMode serverMode);           // 生成模式切换的命令字符串
-    QString generatePwmControlMessage();
+    QString generatePwmControlMessage(bool bShouldSmooth = false, int MS = 500);
     void handleServerResponse(const QNetworkDatagram &datagram, const QString &message);
     void handleBatteryInfo(const QString &message);
     void processBatteryInfo(const QString &batteryLevel);
@@ -93,11 +100,18 @@ private:
     void startAutoMode();
     void stopAutoMode();
     void generateAutoPWM();
+    void setupNetwork();
+    void setupTimers();
+    void handleDiscoveryResponse(const QNetworkDatagram &datagram, const QString &message);
+    void handleHeartbeatResponse(const QString &message);
+    void handleModeChangeResponse(const QString &message);
+    void scheduleNextWink();
 private slots:
     void processPendingDatagrams();              // 处理接收到的 UDP 消息
     void checkConnection();                      // 通过发送心跳包检查连接状态
     void setMode(MobileClient::EyeMode newMode); // 更新本地模式状态
     void sendCommand(const QString &command);    // 向觉之瞳发送指令
+    void onAutoWinkTimeout(); // 新增自动眨眼定时器槽函数
 };
 
 #endif // MOBILECLIENT_H
