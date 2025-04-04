@@ -21,7 +21,6 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS Core Qml Quick)
 qt_standard_project_setup()
 
 set(RESOURCE_FILES "resource.qrc")
-
 qt_add_executable(${CMAKE_PROJECT_NAME}
     android/AndroidManifest.xml
     android/build.gradle
@@ -32,6 +31,10 @@ qt_add_executable(${CMAKE_PROJECT_NAME}
     android/gradle.properties
     android/gradlew android/gradlew.bat
     ${RESOURCE_FILES}   )
+
+set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
+     QT_ANDROID_PACKAGE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/android
+ )
 
 qt_add_resources(${CMAKE_PROJECT_NAME} "configuration"
     PREFIX "/"

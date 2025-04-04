@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>SatoriManagerContent/PresetActions.json</file>
+        <file>android/res/logo.png</file>
+        <file>android/res/splash_screen.png</file>
     </qresource>
 </RCC>
