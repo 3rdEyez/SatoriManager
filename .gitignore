@@ -1,5 +1,68 @@
+# OSX
+.DS_Store
 
-/build
-/SatoriManagerContent/build
-*.user
+# Xcode
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+**/.xcode.env.local
+
+# Android/IntelliJ
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.keystore
+!debug.keystore
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Bundle artifacts
+*.jsbundle
+
+# CocoaPods
+ios/Pods/
+
+# Ruby / CocoaPods
+/vendor/bundle/
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# Build
+android/app/build/
+ios/build/
+
+# Metro
+.metro-health-check*
+
+# Testing
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# Qt legacy files (from previous implementation)
+*.pro.user
 *.autosave
+CMakeLists.txt.user

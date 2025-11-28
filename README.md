@@ -1,134 +1,262 @@
-# SatoriManager 项目
+# SatoriManager
+
+跨平台机器人眼部控制客户端，使用 React Native 构建，支持 Android 和 iOS。
 
 ## 项目简介
-SatoriManager 是一个基于 Qt 和 QML 的小型机器人控制项目，用户可以通过移动端远程操控机器人。项目支持模式切换（如自动模式、睡眠模式、人脸识别等）以及机器人头部的旋转和眨眼控制，包含移动端控制客户端和机器人服务器端的通信功能。
+
+SatoriManager 是一个移动端远程控制应用，用于操控 SatoriEye 机器人眼部运动。支持 **WiFi (UDP)** 和 **蓝牙 (BLE)** 双连接方式，提供模式切换、摇杆控制、预设动作播放等功能。
 
 ## 技术栈
-- **C++ & Qt**：实现移动客户端及通信功能
-- **QML**：用于 UI 设计，提供用户交互
-- **UDP**：实现客户端与服务器之间的实时通信
+
+| 技术 | 用途 |
+|------|------|
+| **React Native 0.76** | 跨平台移动应用框架 |
+| **TypeScript** | 类型安全的 JavaScript |
+| **Zustand** | 轻量级状态管理 |
+| **react-native-ble-plx** | 蓝牙低功耗 (BLE) 通信 |
+| **react-native-udp** | UDP 网络通信 |
+| **react-native-gesture-handler** | 手势处理 |
+| **react-native-reanimated** | 流畅动画 |
 
 ## 系统要求
-- **Qt 6.8** 或更高版本
-- **C++17** 或更高版本
-- 支持 **UDP** 的网络环境
 
-## SatoriManager 前端描述
-SatoriManager 前端部分基于 Qt Quick 和 QML 实现，提供用户友好的界面来控制机器人眼部运动、模式切换、手动操作等功能。
+- **Node.js** >= 18
+- **pnpm** (包管理器)
+- **Android Studio** (Android 开发)
+- **Xcode** (iOS 开发，仅 macOS)
+- **JDK 17** (Android 编译)
 
-### 主要页面与功能概述
+## 快速开始
 
-1. **主控制页面**：
-   - **模式切换**：提供多个按钮用于切换不同工作模式，如“自动模式”、“睡眠模式”、“人脸识别模式”和“手动模式”，方便用户选择适合的操作模式。
-   - **连接/断开连接**：通过按钮与机器人建立或断开通信。
-   - **摇杆控件与呼吸效果及电池进度指示器**：
-     - **摇杆控制**：内圈为可拖动的摇杆，用户可以在外圈内自由移动。
-     - **电池进度指示器**：外圈显示环形进度条，反映电池电量（范围：0到1）。
-   - **播放预设动画**：
-     - 用户可以选择并播放预设的机器人动作序列。每个动作包含多个关键帧，关键帧中包括眼球和眼皮的 PWM 控制值及动作持续时间。
-     - 支持通过读取本地 JSON 文件中的数据来选择并播放预设动画。
-     - 用户选择动作名称（例如`lookUp`或`lookDown`）即可触发对应的动画播放。
-     - 系统按顺序执行关键帧中的 PWM 值和持续时间，实现平滑的眼部运动。
+### 一键初始化
 
-2. **眼部控制页面**：
-   - **拨盘控件**：用户可以通过拨盘实时调节眼皮的开合角度和瞳孔大小，精准控制眼部状态。
-   - **描述文本**：界面上清晰标示每个拨盘的功能，例如“眼皮角度”和“瞳孔大小”，帮助用户了解调节项。
+**Windows (PowerShell):**
+```powershell
+.\init.ps1
+```
 
-## 安装与使用
-
-### 克隆项目
+**Linux/Mac:**
 ```bash
-git clone https://github.com/3rdEyez/SatoriManager.git
-cd SatoriManager
+chmod +x init.sh && ./init.sh
 ```
 
-### 编译项目
-1. 使用 Qt Creator 或命令行进入项目根目录。
-2. 配置 Qt Kit，选择适合的目标平台（如 Android 或 Desktop）。
-3. 编译并运行项目。
+### 手动安装
 
-### 项目配置
-确保服务器和客户端在同一局域网内，以便客户端能够自动发现服务器。
+```bash
+# 安装依赖
+pnpm install
 
-## 使用说明
+# 启动 Metro 开发服务器
+pnpm start
 
-### 模式切换
-UI 提供模式切换按钮，用户可选择不同的工作模式。切换后，当前模式按钮高亮显示：
-- **自动模式**：机器人自动导航。
-- **手动模式**：用户手动控制机器人。
-- **睡眠模式**：机器人进入低功耗状态。
-- **人脸识别模式**：机器人开启人脸识别功能（当前未实装）。
+# 运行 Android
+pnpm android
 
-### 控制机器人旋转与眨眼
-UI 提供了控制机器人头部的操作按钮，用户可以实现机器人向上、向下、向左、向右旋转及眨眼操作。
-
-### 连接与重连
-初次连接时，客户端发送广播发现消息，寻找局域网内的机器人服务器。服务器响应后，客户端自动连接并发送心跳消息。如果网络中断，客户端会自动重连。
-
-以下是包含头文件说明的更新版报文格式表格，帮助开发者清晰了解这些报文内容已集中定义在 `ProtocolMessages.h` 中：
-
-## 报文格式
-
-所有报文类型和内容均在 `ProtocolMessages.h` 头文件中定义，以便集中管理和维护。每个报文类型对应的常量定义在 `ProtocolMessages` 命名空间中，方便在代码中引用。
-
-| 报文类型             | 报文内容                                 | 说明                                                 |
-|----------------------|------------------------------------------|------------------------------------------------------|
-| 发现请求             | `SatoriEye_DISCOVERY_REQUEST`            | 客户端发送的请求，寻找可用的机器人服务器。             |
-| 发现响应             | `SatoriEye_DISCOVERY_RESPONSE,<电量信息>` | 服务器的响应，包含电量信息（如 `85` 表示 85%）。       |
-| 心跳请求             | `SatoriEye_HEARTBEAT_REQUEST`            | 客户端发送的心跳请求，确保连接的有效性。                |
-| 心跳响应             | `SatoriEye_HEARTBEAT_RESPONSE,<电量信息（可选）>` | 服务器的响应，可能包含电量信息，表示连接正常。         |
-| 设置模式命令         | `SET_MODE:<模式>`                        | 客户端发送的请求，用于设置机器人工作模式（如 `Auto`）。 但是在自动和手动之间切换不需要觉之瞳回复|
-| 设置模式成功响应     | `SET_MODE_SUCCESS:<模式>`                | 服务器确认模式设置成功（如 `SET_MODE_SUCCESS:Auto`）。 |
-| 断开连接             | `SatoriEye_DISCONNECT`                   | 客户端发送的请求，通知服务器断开连接。                 |
-| PWM 控制消息         | `CH1:<值>CH2:<值>CH3:<值>`               | 发送通道 PWM 值，用于控制眼部运动（范围 500-2500 微秒）。 |
-| PWM 平滑控制消息         | `SMOOTH:CH1:<值>CH2:<值>CH3:<值>`               | 发送通道 PWM 值，用于控制眼部运动（范围 500-2500 微秒）。 |
-
-### PWM 控制消息示例
-假设要设置通道 PWM 值如下：
-- CH1: 600（水平眼球运动）
-- CH2: 2200（垂直眼球运动）
-- CH3: 1600（上眼皮运动）
-
-发送格式为：
+# 运行 iOS (仅 macOS)
+pnpm ios
 ```
-CH1:600CH2:2200CH3:1600
+
+## 功能特性
+
+### 连接方式
+
+| 方式 | 特点 | 适用场景 |
+|------|------|---------|
+| **WiFi (UDP)** | 广播自动发现，低延迟 | 室内局域网 |
+| **蓝牙 (BLE)** | 点对点连接，便携性强 | 户外/无网络环境 |
+
+### 控制模式
+
+- **自动模式**: 机器人自动运动，支持随机眼球运动
+- **手动模式**: 通过摇杆精确控制眼球位置
+- **睡眠模式**: 低功耗待机状态
+- **人脸识别模式**: 自动追踪人脸 (预留)
+
+### 主要页面
+
+1. **主控制页面**
+   - 模式切换按钮
+   - 摇杆控制 + 电量显示
+   - 预设动作播放
+   - 连接状态指示
+
+2. **眼部控制页面**
+   - 眼皮角度拨盘
+   - 瞳孔大小拨盘 (预留)
+
+3. **设置页面**
+   - PWM 变化范围调节
+   - 更新间隔设置
+   - 自动复位开关
+   - 自动眨眼开关
+
+## 蓝牙架构 (Blue-Eye Architecture)
+
+### 系统拓扑
+
 ```
-#### 预设动画的数据结构
-预设动画数据结构位于 JSON 文件 `PresetActions.json` 中，每个预设动作包含多个关键帧，格式如下：
-- -1 为不做修改
-- 每个PWM值用比例表示（0 - 1）。
+┌─────────────────────────────────────────┐
+│         React Native App (Central)       │
+├──────────────┬──────────────┬───────────┤
+│   UI Layer   │ Protocol Layer│ BLE Driver│
+│  (Joystick)  │(Buffer Encode)│ (ble-plx) │
+└──────┬───────┴──────┬───────┴─────┬─────┘
+       │              │             │
+       │    Encoded Buffer         │
+       │              ▼             │
+       │     ┌────────────────┐    │
+       │     │ BLE Write (NR) │────┼──────────┐
+       │     └────────────────┘    │          │
+       │                           │          ▼
+       │                    ┌──────┴──────────────────┐
+       │                    │   ESP32-S3 (Peripheral)  │
+       │                    ├──────────────┬──────────┤
+       │                    │  BLE Server  │ Parser   │
+       │                    │    Stack     │  (C++)   │
+       │                    └──────┬───────┴────┬─────┘
+       │                           │            │
+       │    ┌──────────────────────┘            │
+       │    │ BLE Notify                        ▼
+       │    ▼                           ┌─────────────┐
+       └────────────────────────────────│   Actuator  │
+                                        │Servo/Power  │
+                                        └─────────────┘
+```
+
+### GATT 服务定义
+
+| 实体 | UUID | 属性 | 用途 |
+|------|------|------|------|
+| Primary Service | `6e400001-b5a3-f393-e0a9-e50e24dcca9e` | - | Nordic UART Service |
+| TX Characteristic | `6e400002-b5a3-f393-e0a9-e50e24dcca9e` | WriteWithoutResponse | 手机 → 眼球 |
+| RX Characteristic | `6e400003-b5a3-f393-e0a9-e50e24dcca9e` | Notify | 眼球 → 手机 |
+
+### 通信协议
+
+#### 上行指令 (App → ESP32)
+
+固定 6 字节，小端序:
+
+```
+[Header][CMD][Data1][Data2][Data3][Checksum]
+  0xA5   XX    XX     XX     XX      XOR
+```
+
+| CMD | 功能 | Payload |
+|-----|------|---------|
+| 0x01 | 摇杆控制 | X角度, Y角度, 保留 |
+| 0x02-04 | PID参数 | 高字节, 低字节, 保留 |
+| 0x05 | 模式切换 | 模式值, 0, 0 |
+| 0xFF | 心跳 | 0, 0, 0 |
+
+#### 下行遥测 (ESP32 → App)
+
+固定 8 字节:
+```
+[Header][Type][Val1][Val2][Val3][Val4][Status][Checksum]
+```
+
+## 报文格式 (UDP)
+
+| 报文类型 | 格式 | 说明 |
+|---------|------|------|
+| 发现请求 | `SatoriEye_DISCOVERY_REQUEST` | 客户端广播寻找设备 |
+| 发现响应 | `SatoriEye_DISCOVERY_RESPONSE,<电量>` | 服务器响应 |
+| 心跳请求 | `SatoriEye_HEARTBEAT_REQUEST` | 保持连接 |
+| 心跳响应 | `SatoriEye_HEARTBEAT_RESPONSE,<电量>` | 确认在线 |
+| 模式设置 | `SET_MODE:<模式>` | 切换工作模式 |
+| PWM控制 | `CH1:<值>CH2:<值>CH3:<值>` | 直接PWM控制 |
+| 平滑PWM | `SMOOTH:CH1:<值>CH2:<值>CH3:<值>MS:<时长>` | 渐变控制 |
+
+## 预设动作
+
+存储在 `PresetActions.json`:
 
 ```json
 {
-    "wink": [
-        { "CH1": -1, "CH2": -1, "CH3": 0.0, "duration": 200 },
-        { "CH1": -1, "CH2": -1, "CH3": 1, "duration": 200 }
-    ],
-    "wink2": [
-        { "CH1": -1, "CH2": -1, "CH3": 0.0, "duration": 200 },
-        { "CH1": -1, "CH2": -1, "CH3": 1, "duration": 200 },
-        { "CH1": -1, "CH2": -1, "CH3": 0.0, "duration": 200 },
-        { "CH1": -1, "CH2": -1, "CH3": 1, "duration": 200 }
-    ]
+  "wink": [
+    { "CH1": -1, "CH2": -1, "CH3": 0.0, "duration": 200 },
+    { "CH1": -1, "CH2": -1, "CH3": 1.0, "duration": 200 }
+  ]
 }
-
 ```
 
+- `-1`: 保持当前值不变
+- `0-1`: PWM 比例值
+
+## 开发命令
+
+```bash
+# 运行测试
+pnpm test
+
+# 监听模式测试
+pnpm test:watch
+
+# 测试覆盖率
+pnpm test:coverage
+
+# 类型检查
+pnpm typecheck
+
+# 代码检查
+pnpm lint
+```
+
+## 项目结构
+
+```
+SatoriManager/
+├── App.tsx                     # 应用入口
+├── src/
+│   ├── types/                  # TypeScript 类型定义
+│   ├── services/
+│   │   ├── MobileClient.ts     # UDP 通信服务
+│   │   ├── BluetoothClient.ts  # 蓝牙通信服务
+│   │   └── ConnectionManager.ts # 统一连接管理器
+│   ├── store/
+│   │   └── appStore.ts         # Zustand 状态管理
+│   ├── components/
+│   │   ├── Joystick.tsx        # 摇杆组件
+│   │   ├── Dial.tsx            # 拨盘组件
+│   │   ├── StyledButton.tsx    # 按钮组件
+│   │   └── ConnectionModal.tsx # 连接选择弹窗
+│   └── screens/
+│       ├── MainScreen.tsx      # 主控制页面
+│       ├── ControlScreen.tsx   # 眼部控制页面
+│       └── SettingScreen.tsx   # 设置页面
+├── __tests__/                  # 测试文件
+├── android/                    # Android 原生代码
+└── ios/                        # iOS 原生代码
+```
 
 ## 常见问题
 
-### Q: 无法连接到机器人？
-- 确保客户端和服务器在同一网络内。
-- 检查 IP 和端口配置。
-- 确认防火墙未阻止 UDP 广播。
+### Q: 无法连接到设备?
+
+1. **WiFi**: 确保手机和设备在同一局域网
+2. **蓝牙**: 检查蓝牙权限是否已授予
+3. 确认设备已开启并处于可发现状态
+
+### Q: 蓝牙扫描不到设备?
+
+- Android 12+ 需要 `BLUETOOTH_SCAN` 和 `BLUETOOTH_CONNECT` 权限
+- 确保设备名称以 `SatoriEye` 开头
+
+### Q: 控制延迟较高?
+
+- 蓝牙模式使用 `WriteWithoutResponse` 以降低延迟
+- 摇杆发送频率限制为 30Hz 以防止蓝牙栈溢出
 
 ## 贡献
-欢迎贡献代码和提出改进建议。请提交 Issue 或 Pull Request。
+
+欢迎提交 Issue 和 Pull Request！
 
 ## 许可证
-项目采用 GPL 许可证。详细信息请查看 [LICENSE](LICENSE) 文件。
+
+GPL License
 
 ## 联系方式
-- **项目维护人**: 阿卡林真的是太可爱了
-- **GitHub**: [https://github.com/AkazaAkali](https://github.com/AkazaAkali)
-- **Bilibili个人空间**: space.bilibili.com/381473156
+
+- **GitHub**: [@AkazaAkali](https://github.com/AkazaAkali)
+- **Bilibili**: [space.bilibili.com/381473156](https://space.bilibili.com/381473156)
