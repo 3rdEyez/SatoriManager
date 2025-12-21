@@ -6,7 +6,7 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {PaperProvider} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {DashboardScreen, PuppeteerScreen, TuningLabScreen} from './src/screens';
+import {DashboardScreen, PuppeteerScreen, VisionScreen, TuningLabScreen, EngineerScreen} from './src/screens';
 import {useAppStore} from './src/store/appStore';
 import {paperTheme, Colors} from './src/theme';
 
@@ -65,12 +65,32 @@ const App: React.FC = () => {
                 }}
               />
               <Tab.Screen
+                name="Vision"
+                component={VisionScreen}
+                options={{
+                  tabBarLabel: '视觉追踪',
+                  tabBarIcon: ({color, size}) => (
+                    <Icon name="video" size={size} color={color} />
+                  ),
+                }}
+              />
+              <Tab.Screen
                 name="TuningLab"
                 component={TuningLabScreen}
                 options={{
                   tabBarLabel: '潜意识调优',
                   tabBarIcon: ({color, size}) => (
                     <Icon name="tune-vertical" size={size} color={color} />
+                  ),
+                }}
+              />
+              <Tab.Screen
+                name="Engineer"
+                component={EngineerScreen}
+                options={{
+                  tabBarLabel: '工程师',
+                  tabBarIcon: ({color, size}) => (
+                    <Icon name="cog" size={size} color={color} />
                   ),
                 }}
               />

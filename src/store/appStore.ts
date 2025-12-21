@@ -17,8 +17,12 @@ import {
   PID_DEFAULTS,
   FILTER_DEFAULTS,
   BatteryStatus,
+  VideoStreamState,
+  ESP32Device,
+  DeviceDiscoveryState,
 } from '../types';
 import {connectionManager} from '../services/ConnectionManager';
+import {FaceDetectionResult} from '../services/FaceDetector';
 
 // 默认电池状态
 const defaultBatteryStatus: BatteryStatus = {
@@ -69,6 +73,24 @@ interface AppState {
   bluetoothScan: BluetoothScanState;
   // 调优参数
   tuningParameters: TuningParameters;
+  // 视觉伺服状态
+  visionState: {
+    isActive: boolean;
+    videoStream: VideoStreamState;
+    faceDetection: {
+      isEnabled: boolean;
+      lastResult: FaceDetectionResult | null;
+      avgFPS: number;
+      avgLatency: number;
+    };
+    tracking: {
+      isTracking: boolean;
+      trackingMode: 'auto' | 'manual' | 'hybrid';
+      currentTrackingId: number | null;
+    };
+  };
+  // 设备发现状态
+  deviceDiscovery: DeviceDiscoveryState;
 
   // Actions
   setConnection: (state: ConnectionState) => void;
@@ -96,6 +118,22 @@ interface AppState {
   applyFilter: (params: FilterParameters) => void;
   calibrateCenter: () => void;
   revive: () => void;
+
+  // 视觉伺服操作
+  setVisionActive: (active: boolean) => void;
+  updateFaceDetection: (result: FaceDetectionResult) => void;
+  updateVideoStreamState: (state: Partial<VideoStreamState>) => void;
+  setTrackingMode: (mode: 'auto' | 'manual' | 'hybrid') => void;
+  startTracking: () => void;
+  stopTracking: () => void;
+
+  // 设备发现操作
+  startDeviceDiscovery: () => void;
+  stopDeviceDiscovery: () => void;
+  selectDevice: (device: ESP32Device) => void;
+  updateDiscoveredDevices: (devices: ESP32Device[]) => void;
+  startVideoStream: () => void;
+  stopVideoStream: () => void;
 
   // 初始化
   initialize: () => void;
@@ -133,6 +171,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     error: null,
   },
   tuningParameters: {...defaultTuningParameters},
+  visionState: {
+    isActive: false,
+    videoStream: {
+      isReceiving: false,
+      currentFPS: 0,
+      droppedFrames: 0,
+      avgLatency: 0,
+    },
+    faceDetection: {
+      isEnabled: false,
+      lastResult: null,
+      avgFPS: 0,
+      avgLatency: 0,
+    },
+    tracking: {
+      isTracking: false,
+      trackingMode: 'auto',
+      currentTrackingId: null,
+    },
+  },
+  deviceDiscovery: {
+    isDiscovering: false,
+    devices: [],
+    selectedDevice: null,
+    error: null,
+  },
 
   // 设置连接状态
   setConnection: (connection) => set({connection}),
@@ -261,6 +325,171 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  // ========== 视觉伺服操作 ==========
+
+  // 设置视觉系统激活状态
+  setVisionActive: (active) => {
+    set((state) => ({
+      visionState: {
+        ...state.visionState,
+        isActive: active,
+      },
+    }));
+  },
+
+  // 更新人脸检测结果
+  updateFaceDetection: (result) => {
+    set((state) => {
+      const fpsHistory = state.visionState.faceDetection.avgFPS;
+      const newFPS =
+        result.processingTime > 0 ? 1000 / result.processingTime : 0;
+      const avgFPS = fpsHistory * 0.7 + newFPS * 0.3; // 指数移动平均
+
+      return {
+        visionState: {
+          ...state.visionState,
+          faceDetection: {
+            ...state.visionState.faceDetection,
+            lastResult: result,
+            avgFPS,
+            avgLatency: result.processingTime,
+          },
+        },
+      };
+    });
+  },
+
+  // 更新视频流状态
+  updateVideoStreamState: (streamState) => {
+    set((state) => ({
+      visionState: {
+        ...state.visionState,
+        videoStream: {
+          ...state.visionState.videoStream,
+          ...streamState,
+        },
+      },
+    }));
+  },
+
+  // 设置追踪模式
+  setTrackingMode: (mode) => {
+    set((state) => ({
+      visionState: {
+        ...state.visionState,
+        tracking: {
+          ...state.visionState.tracking,
+          trackingMode: mode,
+        },
+      },
+    }));
+  },
+
+  // 开始追踪
+  startTracking: () => {
+    connectionManager.startVisualServo();
+    set((state) => ({
+      visionState: {
+        ...state.visionState,
+        tracking: {
+          ...state.visionState.tracking,
+          isTracking: true,
+        },
+      },
+    }));
+  },
+
+  // 停止追踪
+  stopTracking: () => {
+    connectionManager.stopVisualServo();
+    set((state) => ({
+      visionState: {
+        ...state.visionState,
+        tracking: {
+          ...state.visionState.tracking,
+          isTracking: false,
+          currentTrackingId: null,
+        },
+      },
+    }));
+  },
+
+  // ========== 设备发现操作 ==========
+
+  // 开始设备发现
+  startDeviceDiscovery: () => {
+    connectionManager.startDeviceDiscovery();
+    set((state) => ({
+      deviceDiscovery: {
+        ...state.deviceDiscovery,
+        isDiscovering: true,
+        error: null,
+      },
+    }));
+  },
+
+  // 停止设备发现
+  stopDeviceDiscovery: () => {
+    connectionManager.stopDeviceDiscovery();
+    set((state) => ({
+      deviceDiscovery: {
+        ...state.deviceDiscovery,
+        isDiscovering: false,
+      },
+    }));
+  },
+
+  // 选择设备
+  selectDevice: (device) => {
+    set((state) => ({
+      deviceDiscovery: {
+        ...state.deviceDiscovery,
+        selectedDevice: device,
+      },
+    }));
+  },
+
+  // 更新已发现的设备列表
+  updateDiscoveredDevices: (devices) => {
+    set((state) => ({
+      deviceDiscovery: {
+        ...state.deviceDiscovery,
+        devices,
+      },
+    }));
+  },
+
+  // 启动视频流
+  startVideoStream: () => {
+    const {deviceDiscovery} = get();
+    if (deviceDiscovery.selectedDevice) {
+      connectionManager.startVideoStream(deviceDiscovery.selectedDevice);
+      set((state) => ({
+        visionState: {
+          ...state.visionState,
+          videoStream: {
+            ...state.visionState.videoStream,
+            isReceiving: true,
+          },
+        },
+      }));
+    }
+  },
+
+  // 停止视频流
+  stopVideoStream: () => {
+    connectionManager.stopVideoStream();
+    set((state) => ({
+      visionState: {
+        ...state.visionState,
+        videoStream: {
+          ...state.visionState.videoStream,
+          isReceiving: false,
+        },
+      },
+    }));
+  },
+
   // 初始化
   initialize: () => {
     const {settings} = get();
@@ -286,6 +515,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
       (systemStatus) => {
         set({systemStatus});
+      },
+      undefined, // videoFrame callback (handled in VisionScreen)
+      (devices) => {
+        // Device discovery callback
+        get().updateDiscoveredDevices(devices);
       },
     );
 

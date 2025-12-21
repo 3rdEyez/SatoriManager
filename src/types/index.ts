@@ -258,3 +258,94 @@ export const HEARTBEAT_NAMES: Record<HeartbeatStatus, string> = {
   [HeartbeatStatus.Lost]: '脉搏消失',
   [HeartbeatStatus.Reviving]: '电击复苏中',
 };
+
+// ========== 视觉伺服相关类型 ==========
+
+// 视频流配置
+export interface VideoStreamConfig {
+  enabled: boolean;
+  targetFPS: number;
+  resolution: {
+    width: number;
+    height: number;
+  };
+  quality: 'low' | 'medium' | 'high';
+}
+
+// 视频帧数据
+export interface VideoFrame {
+  frameId: number;
+  data: Uint8Array;
+  timestamp: number;
+  width: number;
+  height: number;
+}
+
+// 视频流状态
+export interface VideoStreamState {
+  isReceiving: boolean;
+  currentFPS: number;
+  droppedFrames: number;
+  avgLatency: number;
+}
+
+// 视频流默认配置
+export const VIDEO_STREAM_DEFAULTS: VideoStreamConfig = {
+  enabled: false,
+  targetFPS: 30,
+  resolution: {
+    width: 640,
+    height: 480,
+  },
+  quality: 'medium',
+};
+
+// ========== TCP 视频流相关类型 ==========
+
+// ESP32 设备信息 (从 UDP 心跳发现)
+export interface ESP32Device {
+  deviceId: string;
+  ip: string;
+  tcpPort: number;
+  heartbeatPort: number;
+  fps: number;
+  lastSeen: number; // 时间戳
+  rssi?: number; // 信号强度 (可选)
+}
+
+// TCP 视频配置
+export interface TCPVideoConfig {
+  host: string;
+  port: number;
+  reconnectOnError: boolean;
+  connectionTimeout: number;
+}
+
+// 设备发现状态
+export interface DeviceDiscoveryState {
+  isDiscovering: boolean;
+  devices: ESP32Device[];
+  selectedDevice: ESP32Device | null;
+  error: string | null;
+}
+
+// 帧数据包头部 (12 字节)
+export interface FramePacketHeader {
+  magic: number; // 0xFFD8 (JPEG magic)
+  frameId: number; // 帧 ID
+  totalChunks: number; // 总块数
+  chunkId: number; // 当前块 ID
+  chunkSize: number; // 数据大小
+}
+
+// TCP 视频流常量
+export const TCP_VIDEO_CONSTANTS = {
+  DISCOVERY_PORT: 8889, // UDP 发现端口
+  VIDEO_PORT: 8888, // TCP 视频流端口
+  DEVICE_STALE_TIMEOUT: 10000, // 设备过期时间 (10秒)
+  HEARTBEAT_INTERVAL: 1000, // 心跳间隔 (1秒)
+  CONNECTION_TIMEOUT: 5000, // 连接超时 (5秒)
+  READ_TIMEOUT: 10000, // 读取超时 (10秒)
+  PACKET_HEADER_SIZE: 12, // 数据包头部大小
+  JPEG_MAGIC: 0xFFD8, // JPEG 魔数
+} as const;

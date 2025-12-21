@@ -56,6 +56,13 @@ const TuningLabScreen: React.FC = () => {
   const [pidI, setPidI] = useState(PID_DEFAULTS.i);
   const [pidD, setPidD] = useState(PID_DEFAULTS.d);
 
+  // 视觉伺服 PID 参数
+  const [visionPidP, setVisionPidP] = useState(200);
+  const [visionPidI, setVisionPidI] = useState(10);
+  const [visionPidD, setVisionPidD] = useState(20);
+  const [deadZone, setDeadZone] = useState(0.05);
+  const [maxOutput, setMaxOutput] = useState(300);
+
   // 滤波器参数
   const [kalmanR, setKalmanR] = useState(FILTER_DEFAULTS.kalmanR);
 
@@ -89,6 +96,25 @@ const TuningLabScreen: React.FC = () => {
 
   const handleResetFilter = () => {
     setKalmanR(FILTER_DEFAULTS.kalmanR);
+  };
+
+  const handleApplyVisualServoPID = () => {
+    console.log('Applying Visual Servo PID:', {
+      p: visionPidP,
+      i: visionPidI,
+      d: visionPidD,
+      deadZone,
+      maxOutput,
+    });
+    // 发送视觉伺服 PID 参数到控制器
+  };
+
+  const handleResetVisualServoPID = () => {
+    setVisionPidP(200);
+    setVisionPidI(10);
+    setVisionPidD(20);
+    setDeadZone(0.05);
+    setMaxOutput(300);
   };
 
   return (
@@ -174,6 +200,95 @@ const TuningLabScreen: React.FC = () => {
               disabled={!connection.isConnected}
               style={styles.applyButton}>
               应用 PID 参数
+            </Button>
+          </Card.Content>
+        </Card>
+
+        {/* 视觉伺服 PID 参数调整 */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <View style={styles.cardHeader}>
+              <Icon name="eye-settings" size={24} color={Colors.secondary} />
+              <Text variant="titleMedium" style={styles.cardTitle}>
+                视觉伺服 PID 整定
+              </Text>
+              <Button
+                mode="text"
+                compact
+                onPress={handleResetVisualServoPID}
+                textColor={Colors.textMuted}>
+                重置
+              </Button>
+            </View>
+
+            <Text variant="bodySmall" style={styles.calibrationDescription}>
+              用于自动追踪模式的 PID 控制器参数
+            </Text>
+
+            <ParameterSlider
+              label="P (比例)"
+              value={visionPidP}
+              min={0}
+              max={500}
+              step={10}
+              onChange={setVisionPidP}
+              description="控制响应速度，过大会导致抖动"
+              color={Colors.error}
+            />
+
+            <ParameterSlider
+              label="I (积分)"
+              value={visionPidI}
+              min={0}
+              max={50}
+              step={1}
+              onChange={setVisionPidI}
+              description="消除稳态误差，过大会导致超调"
+              color={Colors.success}
+            />
+
+            <ParameterSlider
+              label="D (微分)"
+              value={visionPidD}
+              min={0}
+              max={100}
+              step={1}
+              onChange={setVisionPidD}
+              description="抑制振荡，增加系统稳定性"
+              color={Colors.secondary}
+            />
+
+            <ParameterSlider
+              label="死区"
+              value={deadZone}
+              min={0}
+              max={0.2}
+              step={0.01}
+              onChange={setDeadZone}
+              description="目标附近不响应范围，防止抖动"
+              color={Colors.warning}
+            />
+
+            <ParameterSlider
+              label="最大输出"
+              value={maxOutput}
+              min={100}
+              max={500}
+              step={10}
+              unit=" PWM"
+              onChange={setMaxOutput}
+              description="限制最大控制量，防止过度响应"
+              color={Colors.primary}
+            />
+
+            <Button
+              mode="contained"
+              icon="check"
+              onPress={handleApplyVisualServoPID}
+              disabled={!connection.isConnected}
+              style={styles.applyButton}
+              buttonColor={Colors.secondary}>
+              应用视觉伺服参数
             </Button>
           </Card.Content>
         </Card>

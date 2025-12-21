@@ -66,3 +66,4 @@ coverage/
 *.pro.user
 *.autosave
 CMakeLists.txt.user
+tcp_cam_recv/

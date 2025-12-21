@@ -11,7 +11,14 @@
       "Bash(pnpm test)",
       "Bash(pnpm test:*)",
       "Bash(where:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(grep:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(cat:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npm run build:*)",
+      "Bash(pnpm typecheck:*)"
     ],
     "deny": [],
     "ask": []

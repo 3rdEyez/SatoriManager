@@ -8,13 +8,16 @@ import {
   NETWORK_CONSTANTS,
   MODE_NAMES,
   ActionFrame,
+  VideoFrame,
 } from '../types';
+import {VideoStreamReceiver} from './VideoStreamReceiver';
 
 type UdpSocket = ReturnType<typeof dgram.createSocket>;
 
 export type ConnectionCallback = (state: ConnectionState) => void;
 export type ModeCallback = (mode: EyeMode) => void;
 export type BatteryCallback = (battery: number) => void;
+export type VideoFrameCallback = (frame: VideoFrame) => void;
 
 class MobileClient {
   private socket: UdpSocket | null = null;
@@ -45,6 +48,10 @@ class MobileClient {
   private onConnectionChange: ConnectionCallback | null = null;
   private onModeChange: ModeCallback | null = null;
   private onBatteryChange: BatteryCallback | null = null;
+  private onVideoFrame: VideoFrameCallback | null = null;
+
+  // 视频流接收器
+  private videoStreamReceiver: VideoStreamReceiver | null = null;
 
   constructor() {
     this.setupSocket();
@@ -92,6 +99,10 @@ class MobileClient {
       this.handleHeartbeatResponse(message);
     } else if (message.startsWith(ProtocolMessages.SET_MODE_SUCCESS)) {
       this.handleModeSuccess(message);
+    } else if (message.startsWith('VIDEO_FRAGMENT:')) {
+      this.handleVideoFragment(message);
+    } else if (message.startsWith('VIDEO_COMPLETE:')) {
+      this.handleVideoComplete(message);
     }
   }
 
@@ -139,6 +150,59 @@ class MobileClient {
         this.currentMode = parseInt(mode, 10) as EyeMode;
         this.onModeChange?.(this.currentMode);
       }
+    }
+  }
+
+  // 处理视频分片
+  // 协议格式: VIDEO_FRAGMENT:<frameId>:<fragmentIndex>:<totalFragments>:<width>:<height>:<base64Data>
+  private handleVideoFragment(message: string) {
+    try {
+      const parts = message.split(':');
+      if (parts.length >= 7) {
+        const frameId = parseInt(parts[1], 10);
+        const fragmentIndex = parseInt(parts[2], 10);
+        const totalFragments = parseInt(parts[3], 10);
+        const width = parseInt(parts[4], 10);
+        const height = parseInt(parts[5], 10);
+        const base64Data = parts[6];
+
+        // 解码 base64 数据
+        const data = Buffer.from(base64Data, 'base64');
+
+        // 确保视频流接收器已初始化
+        if (!this.videoStreamReceiver) {
+          this.videoStreamReceiver = new VideoStreamReceiver();
+          this.videoStreamReceiver.setFrameCallback((frame) => {
+            this.onVideoFrame?.(frame);
+          });
+        }
+
+        // 发送分片到接收器
+        this.videoStreamReceiver.onFragment(
+          frameId,
+          fragmentIndex,
+          totalFragments,
+          data,
+          width,
+          height,
+        );
+      }
+    } catch (error) {
+      console.error('Failed to handle video fragment:', error);
+    }
+  }
+
+  // 处理视频完成信号（可选，用于标记帧传输完成）
+  private handleVideoComplete(message: string) {
+    try {
+      const parts = message.split(':');
+      if (parts.length >= 2) {
+        const frameId = parseInt(parts[1], 10);
+        // 可以在这里触发额外的处理逻辑
+        console.log(`Video frame ${frameId} transmission complete`);
+      }
+    } catch (error) {
+      console.error('Failed to handle video complete:', error);
     }
   }
 
@@ -427,14 +491,33 @@ class MobileClient {
     return this.battery;
   }
 
-  // 销毁
   // 发送原始消息 (用于调优指令等)
   sendRawMessage(message: string) {
     this.sendMessage(message);
   }
 
+  // 设置视频帧回调
+  setVideoCallback(callback: VideoFrameCallback | null) {
+    this.onVideoFrame = callback;
+
+    // 如果回调为null，清理视频流接收器
+    if (!callback && this.videoStreamReceiver) {
+      this.videoStreamReceiver.destroy();
+      this.videoStreamReceiver = null;
+    }
+  }
+
+  // 获取视频流统计信息
+  getVideoStreamStats() {
+    return this.videoStreamReceiver?.getStats() || null;
+  }
+
   destroy() {
     this.disconnect();
+    if (this.videoStreamReceiver) {
+      this.videoStreamReceiver.destroy();
+      this.videoStreamReceiver = null;
+    }
     if (this.socket) {
       this.socket.close();
       this.socket = null;
