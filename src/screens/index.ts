@@ -4,6 +4,7 @@ export {default as PuppeteerScreen} from './PuppeteerScreen';
 export {VisionScreen} from './VisionScreen';
 export {default as TuningLabScreen} from './TuningLabScreen';
 export {EngineerScreen} from './EngineerScreen';
+export {default as MindReadingScreen} from './MindReadingScreen';
 
 // 旧版屏幕（保留以备兼容）
 export {default as MainScreen} from './MainScreen';

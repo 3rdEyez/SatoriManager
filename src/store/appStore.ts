@@ -20,7 +20,11 @@ import {
   VideoStreamState,
   ESP32Device,
   DeviceDiscoveryState,
+  MindReadingConfig,
+  MindReadingState,
+  MindReadingResult,
 } from '../types';
+import {MIND_READING_DEFAULTS} from '../constants/MindReadingDefaults';
 import {connectionManager} from '../services/ConnectionManager';
 import {FaceDetectionResult} from '../services/FaceDetector';
 
@@ -91,6 +95,10 @@ interface AppState {
   };
   // 设备发现状态
   deviceDiscovery: DeviceDiscoveryState;
+  // 读心功能配置
+  mindReadingConfig: MindReadingConfig;
+  // 读心功能状态
+  mindReadingState: MindReadingState;
 
   // Actions
   setConnection: (state: ConnectionState) => void;
@@ -137,6 +145,13 @@ interface AppState {
 
   // 初始化
   initialize: () => void;
+
+  // 读心功能操作
+  setMindReadingConfig: (config: Partial<MindReadingConfig>) => void;
+  setMindReadingState: (state: Partial<MindReadingState>) => void;
+  startMindReading: () => Promise<void>;
+  stopMindReading: () => void;
+  updateMindReadingResult: (result: MindReadingResult) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -195,6 +210,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     isDiscovering: false,
     devices: [],
     selectedDevice: null,
+    error: null,
+  },
+
+  // 读心功能初始状态
+  mindReadingConfig: {...MIND_READING_DEFAULTS},
+  mindReadingState: {
+    isCapturing: false,
+    isAnalyzing: false,
+    isServerRunning: false,
+    serverUrl: null,
+    lastResult: null,
+    currentStability: 0,
+    currentTrackingId: null,
     error: null,
   },
 
@@ -489,6 +517,78 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
   },
+
+  // ========== 读心功能操作 ==========
+
+  // 设置读心配置
+  setMindReadingConfig: (config) =>
+    set((state) => ({
+      mindReadingConfig: {...state.mindReadingConfig, ...config},
+    })),
+
+  // 设置读心状态
+  setMindReadingState: (state) =>
+    set((s) => ({
+      mindReadingState: {...s.mindReadingState, ...state},
+    })),
+
+  // 启动读心功能
+  startMindReading: async () => {
+    const {mindReadingConfig} = get();
+    try {
+      // 动态导入以避免循环依赖
+      const {getMindReadingService} = require('../services/MindReadingService');
+      const service = getMindReadingService();
+
+      await service.initialize(mindReadingConfig);
+      await service.start();
+
+      set((s) => ({
+        mindReadingState: {
+          ...s.mindReadingState,
+          isServerRunning: true,
+          serverUrl: service.getServerUrl(),
+          error: null,
+        },
+      }));
+    } catch (error) {
+      console.error('[AppStore] Failed to start mind reading:', error);
+      set((s) => ({
+        mindReadingState: {
+          ...s.mindReadingState,
+          error: (error as Error).message,
+        },
+      }));
+      throw error;
+    }
+  },
+
+  // 停止读心功能
+  stopMindReading: () => {
+    const {getMindReadingService} = require('../services/MindReadingService');
+    const service = getMindReadingService();
+    service.stop();
+
+    set((s) => ({
+      mindReadingState: {
+        ...s.mindReadingState,
+        isServerRunning: false,
+        serverUrl: null,
+        isCapturing: false,
+        isAnalyzing: false,
+      },
+    }));
+  },
+
+  // 更新读心结果
+  updateMindReadingResult: (result) =>
+    set((s) => ({
+      mindReadingState: {
+        ...s.mindReadingState,
+        lastResult: result,
+        error: null,
+      },
+    })),
 
   // 初始化
   initialize: () => {

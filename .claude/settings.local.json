@@ -18,7 +18,10 @@
       "Bash(cat:*)",
       "mcp__ide__getDiagnostics",
       "Bash(npm run build:*)",
-      "Bash(pnpm typecheck:*)"
+      "Bash(pnpm typecheck:*)",
+      "WebSearch",
+      "Bash(pnpm tsc:*)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []

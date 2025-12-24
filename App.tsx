@@ -6,7 +6,7 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {PaperProvider} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {DashboardScreen, PuppeteerScreen, VisionScreen, TuningLabScreen, EngineerScreen} from './src/screens';
+import {DashboardScreen, PuppeteerScreen, VisionScreen, TuningLabScreen, EngineerScreen, MindReadingScreen} from './src/screens';
 import {useAppStore} from './src/store/appStore';
 import {paperTheme, Colors} from './src/theme';
 
@@ -71,6 +71,16 @@ const App: React.FC = () => {
                   tabBarLabel: '视觉追踪',
                   tabBarIcon: ({color, size}) => (
                     <Icon name="video" size={size} color={color} />
+                  ),
+                }}
+              />
+              <Tab.Screen
+                name="MindReading"
+                component={MindReadingScreen}
+                options={{
+                  tabBarLabel: '读心',
+                  tabBarIcon: ({color, size}) => (
+                    <Icon name="brain" size={size} color={color} />
                   ),
                 }}
               />

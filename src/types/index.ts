@@ -349,3 +349,41 @@ export const TCP_VIDEO_CONSTANTS = {
   PACKET_HEADER_SIZE: 12, // 数据包头部大小
   JPEG_MAGIC: 0xFFD8, // JPEG 魔数
 } as const;
+
+// ========== Mind Reading 相关类型 ==========
+
+// 读心功能配置
+export interface MindReadingConfig {
+  enabled: boolean;
+  qianwenApiKey: string;
+  customPrompt: string;
+  stabilityThreshold: number; // 毫秒，默认 1000
+  minCaptureInterval: number; // 毫秒，默认 10000
+  serverPort: number; // 默认 8080
+}
+
+// 读心功能状态
+export interface MindReadingState {
+  isCapturing: boolean;
+  isAnalyzing: boolean;
+  isServerRunning: boolean;
+  serverUrl: string | null;
+  lastResult: MindReadingResult | null;
+  currentStability: number; // 当前稳定时长（毫秒）
+  currentTrackingId: number | null;
+  error: string | null;
+}
+
+// 读心分析结果
+export interface MindReadingResult {
+  timestamp: number;
+  analysis: string;
+  model: string;
+}
+
+// 人脸捕获触发信息
+export interface MindReadingCaptureTrigger {
+  trackingId: number;
+  stabilityDuration: number; // 毫秒
+  frame: VideoFrame;
+}

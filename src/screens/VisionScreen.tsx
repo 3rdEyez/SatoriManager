@@ -38,6 +38,8 @@ export const VisionScreen = () => {
     startTracking,
     stopTracking,
     setTrackingMode,
+    mindReadingConfig,
+    mindReadingState,
   } = useAppStore(state => ({
     isConnected: state.connection.isConnected,
     connectionType: state.connection.connectionType,
@@ -47,6 +49,8 @@ export const VisionScreen = () => {
     startTracking: state.startTracking,
     stopTracking: state.stopTracking,
     setTrackingMode: state.setTrackingMode,
+    mindReadingConfig: state.mindReadingConfig,
+    mindReadingState: state.mindReadingState,
   }));
 
   const [isStreaming, setIsStreaming] = useState(false);
@@ -113,6 +117,23 @@ export const VisionScreen = () => {
       // 如果启用人脸检测，异步检测人脸
       if (faceDetectionEnabled) {
         detectFaces(frame);
+      }
+
+      // 集成读心功能：发送帧到读心服务
+      if (mindReadingConfig.enabled && mindReadingState.isServerRunning) {
+        try {
+          // 动态导入以避免启动时的循环依赖
+          const {getMindReadingService} = require('../services/MindReadingService');
+          const mindReadingService = getMindReadingService();
+
+          // 获取当前人脸检测结果
+          const faceResult = visionState.faceDetection.lastResult;
+          if (faceResult && faceResult.faces.length > 0) {
+            mindReadingService.processFrame(frame, faceResult);
+          }
+        } catch (error) {
+          console.error('[VisionScreen] Mind reading service error:', error);
+        }
       }
     };
 
