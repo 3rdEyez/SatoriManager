@@ -1,0 +1,18 @@
+name: satori_manager
+description: 觉瞳 Wi-Fi 控制技术验证版
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: ^3.12.2
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_foreground_task: 11.0.3
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/actions/presets.json
