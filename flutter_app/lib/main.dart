@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'core/protocol.dart';
+import 'joystick_pad.dart';
 import 'runtime/control_client.dart';
 
 const _background = Color(0xFF0B1020);
@@ -104,16 +105,42 @@ class _ControlShellState extends State<ControlShell>
   int tab = 0;
   bool simulator = false;
   bool busy = false;
+  bool resetStickOnRelease = true;
+  DateTime? _lastJoystickSend;
+  String? _joystickEndpoint;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     client.addListener(_refresh);
+    _syncJoystickTarget();
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      _syncJoystickTarget();
+      setState(() {});
+    }
+  }
+
+  void _syncJoystickTarget() {
+    final state = client.state;
+    if (state['connection'] != 'connected') {
+      _joystickEndpoint = null;
+      return;
+    }
+    final endpoint = state['endpoint'].toString();
+    if (_joystickEndpoint == endpoint) return;
+    _joystickEndpoint = endpoint;
+    final target = state['target'];
+    if (target is List && target.length == 3) {
+      for (var i = 0; i < 3; i++) {
+        if (target[i] is num) {
+          values[i] = ((target[i] as num) - 500) / 2000;
+        }
+      }
+    }
   }
 
   @override
@@ -181,8 +208,49 @@ class _ControlShellState extends State<ControlShell>
       'simulator': simulator,
       'profile': profile.toJson(),
     });
-    if (mounted) setState(() => tab = 0);
+    if (mounted) {
+      setState(() {
+        tab = 0;
+        for (var i = 0; i < 3; i++) {
+          values[i] = (profile.initial[i] - 500) / 2000;
+        }
+      });
+    }
   });
+
+  void _sendJoystick(double x, double y, {bool force = false}) {
+    if (busy) return;
+    setState(() {
+      values[0] = x;
+      values[1] = y;
+    });
+    final now = DateTime.now();
+    if (!force &&
+        _lastJoystickSend != null &&
+        now.difference(_lastJoystickSend!) < const Duration(milliseconds: 50)) {
+      return;
+    }
+    _lastJoystickSend = now;
+    client
+        .send('manual', {
+          'values': [x, y, -1],
+        })
+        .catchError((Object error) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(error.toString())));
+          }
+        });
+  }
+
+  void _releaseJoystick() {
+    if (resetStickOnRelease) {
+      _sendJoystick(.5, .5, force: true);
+    } else {
+      _sendJoystick(values[0], values[1], force: true);
+    }
+  }
 
   Widget _sectionTitle(String title, {String? description}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,6 +416,104 @@ class _ControlShellState extends State<ControlShell>
           ),
         ),
       if (connected) ...[
+        _sectionTitle('手动控制', description: '摇杆实时控制方向；显示的是目标，不是位置遥测'),
+        const SizedBox(height: 12),
+        _panel(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '方向摇杆 · CH1 / CH2',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              JoystickPad(
+                x: values[0],
+                y: values[1],
+                onChanged: (x, y) => _sendJoystick(x, y),
+                onReleased: _releaseJoystick,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'CH1 ${target[0]} μs  ·  CH2 ${target[1]} μs',
+                      style: const TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => _sendJoystick(.5, .5, force: true),
+                    icon: const Icon(Icons.center_focus_strong_rounded),
+                    label: const Text('方向回中'),
+                  ),
+                ],
+              ),
+              Material(
+                color: Colors.transparent,
+                child: SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('松手回中'),
+                  subtitle: const Text('仅回中 CH1 / CH2，眼皮保持原值'),
+                  value: resetStickOnRelease,
+                  onChanged: (value) =>
+                      setState(() => resetStickOnRelease = value),
+                ),
+              ),
+              const Divider(height: 28),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '眼皮 · CH3',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  Text(
+                    '${target[2]} μs',
+                    style: const TextStyle(color: _muted, fontSize: 12),
+                  ),
+                ],
+              ),
+              Slider(
+                value: values[2],
+                onChanged: busy ? null : (v) => setState(() => values[2] = v),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () => _run(
+                          () => client.send('manual', {
+                            'values': [-1, -1, values[2]],
+                          }),
+                        ),
+                  icon: const Icon(Icons.send_rounded),
+                  label: const Text('发送眼皮目标'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: busy ? null : () => _run(() => client.send('stop')),
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: const Text('停止自动与动作'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          '停止只取消本地调度，不发送回中指令；设备不会回报位置。',
+          style: TextStyle(color: _muted, fontSize: 12),
+        ),
+        const SizedBox(height: 22),
         _sectionTitle('持续行为', description: '锁屏时由后台会话持有'),
         const SizedBox(height: 12),
         _panel(
@@ -372,64 +538,6 @@ class _ControlShellState extends State<ControlShell>
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 22),
-        _sectionTitle('手动目标', description: '调整后点击发送；不是位置遥测'),
-        const SizedBox(height: 12),
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < 3; i++) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        ['左右 · CH1', '上下 · CH2', '眼皮 · CH3'][i],
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    Text(
-                      '${target[i]} μs',
-                      style: const TextStyle(color: _muted, fontSize: 12),
-                    ),
-                  ],
-                ),
-                Slider(
-                  value: values[i],
-                  onChanged: busy ? null : (v) => setState(() => values[i] = v),
-                ),
-                if (i < 2) const SizedBox(height: 8),
-              ],
-              const SizedBox(height: 6),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () => _run(
-                          () => client.send('manual', {'values': values}),
-                        ),
-                  icon: const Icon(Icons.send_rounded),
-                  label: const Text('发送手动目标'),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: busy ? null : () => _run(() => client.send('stop')),
-            icon: const Icon(Icons.stop_circle_outlined),
-            label: const Text('停止自动与动作'),
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          '停止只取消本地调度，不发送回中指令；设备不会回报位置。',
-          style: TextStyle(color: _muted, fontSize: 12),
         ),
       ],
     ]);

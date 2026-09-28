@@ -223,6 +223,20 @@ void main() {
     h.engine.dispose();
   });
 
+  test('joystick release restores CH1/CH2 and preserves CH3', () async {
+    final h = Harness();
+    await h.connect();
+    h.engine.setManual([.5, .5, .8]);
+    h.engine.play('wink');
+    h.engine.setManual([.2, .7, -1]);
+    expect(h.engine.playback, 'idle');
+    expect(h.transport.sent.last, endsWith('CH1:900CH2:1900CH3:500'));
+    h.engine.setManual([.5, .5, -1]);
+    expect(h.transport.sent.last, endsWith('CH1:1500CH2:1500CH3:500'));
+    expect(() => h.engine.setManual([.5, .5, -2]), throwsFormatException);
+    h.engine.dispose();
+  });
+
   test('automatic wink retains current rotation channels', () async {
     final h = Harness();
     await h.connect();

@@ -2,7 +2,7 @@
 
 基线：Qt 仓库 `e7e09d4b09deff4f4e09e913edf161be827c591d`。本工程是 Android Wi-Fi/UDP 技术验证版；未经过实际觉瞳和锁屏验收，不能代替旧客户端。Flutter 3.44.9 / Dart 3.12.2，`flutter_foreground_task` 11.0.3；Android Gradle Plugin 9.0.1、Gradle 9.1.0、Kotlin 2.3.20、compile SDK 36、NDK 28.2.13676358。原 Qt 工程保留。
 
-界面已重构为“控制 / 动作 / 设备”三页，共用同一个后台状态。深色视觉方向保留旧版紫色线索，连接、电量和动作状态都有文字说明。控制页可切换自动行为并手动发送目标；动作页播放或取消现有 `wink`、`wink2`；设备页发现网络端点并配置真实设备安全范围。界面预览来自 Flutter 实际渲染，使用带“模拟器”标识的样本状态，可通过 `flutter test tool/render_previews_test.dart --update-goldens` 重新生成到 `build/design_preview/`。此预览脚本需要本机安装 Noto Sans CJK 字体。
+界面已重构为“控制 / 动作 / 设备”三页，共用同一个后台状态。深色视觉方向保留旧版紫色线索，连接、电量和动作状态都有文字说明。控制页可切换自动行为，方向摇杆实时控制 CH1/CH2，松手默认回中，也可关闭松手回中或点击“方向回中”；眼皮 CH3 单独发送，方向操作不修改 CH3。回中目标受真实设备安全范围约束，且不等同于“停止动作”；动作页播放或取消现有 `wink`、`wink2`；设备页发现网络端点并配置真实设备安全范围。界面预览来自 Flutter 实际渲染，使用带“模拟器”标识的样本状态，可通过 `flutter test tool/render_previews_test.dart --update-goldens` 重新生成到 `build/design_preview/`。此预览脚本需要本机安装 Noto Sans CJK 字体。
 
 ## 运行
 

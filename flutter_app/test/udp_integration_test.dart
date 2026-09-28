@@ -45,9 +45,12 @@ void main() {
         profile: SafetyProfile.simulator(),
       );
       engine.setManual([.5, .5, .5]);
+      engine.setManual([.2, .7, -1]);
+      engine.setManual([.5, .5, -1]);
       engine.disconnect();
       await received.future.timeout(const Duration(seconds: 2));
       expect(messages, contains('CH1:1500CH2:1500CH3:1500'));
+      expect(messages, contains('CH1:900CH2:1900CH3:1500'));
       expect(messages.first, Protocol.discovery);
       expect(messages.last, Protocol.disconnect);
     } finally {

@@ -214,9 +214,12 @@ class ControlEngine {
   void setManual(List<num> proportions) {
     _requireControl();
     if (proportions.length != 3) throw const FormatException('需要三个通道');
+    final next = [
+      for (var i = 0; i < 3; i++)
+        proportions[i] == -1 ? target[i] : Protocol.proportion(proportions[i]),
+    ];
     _cancelMotion();
     mode = 'manual';
-    final next = [for (final value in proportions) Protocol.proportion(value)];
     _send(next);
   }
 
