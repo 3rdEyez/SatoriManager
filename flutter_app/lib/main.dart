@@ -106,6 +106,7 @@ class _ControlShellState extends State<ControlShell>
   bool busy = false;
   bool resetStickOnRelease = true;
   DateTime? _lastJoystickSend;
+  DateTime? _lastEyelidSend;
   String? _joystickEndpoint;
 
   @override
@@ -258,6 +259,29 @@ class _ControlShellState extends State<ControlShell>
     } else {
       _sendJoystick(values[0], values[1], force: true);
     }
+  }
+
+  void _sendEyelid(double value, {bool force = false}) {
+    if (busy) return;
+    setState(() => values[2] = value);
+    final now = DateTime.now();
+    if (!force &&
+        _lastEyelidSend != null &&
+        now.difference(_lastEyelidSend!) < const Duration(milliseconds: 50)) {
+      return;
+    }
+    _lastEyelidSend = now;
+    client
+        .send('manual', {
+          'values': [-1, -1, value],
+        })
+        .catchError((Object error) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(error.toString())));
+          }
+        });
   }
 
   Widget _sectionTitle(String title, {String? description}) => Column(
@@ -515,23 +539,17 @@ class _ControlShellState extends State<ControlShell>
                 ],
               ),
               Slider(
+                key: const ValueKey('eyelid-slider'),
                 value: values[2],
-                onChanged: busy ? null : (v) => setState(() => values[2] = v),
+                onChanged: busy ? null : _sendEyelid,
+                onChangeEnd: busy
+                    ? null
+                    : (value) => _sendEyelid(value, force: true),
               ),
               const SizedBox(height: 6),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () => _run(
-                          () => client.send('manual', {
-                            'values': [-1, -1, values[2]],
-                          }),
-                        ),
-                  icon: const Icon(Icons.send_rounded),
-                  label: const Text('发送眼皮目标'),
-                ),
+              const Text(
+                '拖动实时调整眼皮，方向保持不变',
+                style: TextStyle(color: _muted, fontSize: 12),
               ),
             ],
           ),
