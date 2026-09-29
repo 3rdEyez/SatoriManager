@@ -129,7 +129,7 @@ class ControlClient extends ChangeNotifier {
       notificationTitle: '觉瞳 BLE 控制会话',
       notificationText: '正在准备蓝牙连接',
       notificationButtons: const [
-        NotificationButton(id: 'stop', text: '暂停动作'),
+        NotificationButton(id: 'stop', text: '暂停控制'),
         NotificationButton(id: 'disconnect', text: '断开'),
       ],
       callback: startControlTask,

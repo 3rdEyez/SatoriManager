@@ -30,14 +30,22 @@ Future<void> devicePage(
   await tester.pumpAndSettle();
 }
 
+Future<void> scrollToAction(WidgetTester tester, String label) async {
+  await tester.scrollUntilVisible(find.text(label), 250);
+  await tester.drag(find.byType(Scrollable).first, const Offset(0, -120));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('first pairing explains default and keeps existing codes', (
     tester,
   ) async {
     final client = PairingPreviewClient(connected: false);
     await devicePage(tester, client);
-    expect(find.textContaining('首次配对码为123456'), findsOneWidget);
-    expect(find.textContaining('已有设备仍使用此前设置的码'), findsOneWidget);
+    await tester.tap(find.text('配对帮助'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('新设备默认配对码：123456'), findsOneWidget);
+    expect(find.textContaining('修改过请使用新码'), findsOneWidget);
     expect(client.sent, isEmpty);
   });
 
@@ -46,7 +54,7 @@ void main() {
     (tester) async {
       final client = PairingPreviewClient();
       await devicePage(tester, client);
-      await tester.scrollUntilVisible(find.text('修改配对码'), 200);
+      await scrollToAction(tester, '修改配对码');
       await tester.tap(find.text('修改配对码'));
       await tester.pumpAndSettle();
       final inputs = find.descendant(
@@ -82,7 +90,7 @@ void main() {
   testWidgets('changing phone requires separate confirmation', (tester) async {
     final client = PairingPreviewClient(shared: false);
     await devicePage(tester, client);
-    await tester.scrollUntilVisible(find.text('更换手机'), 200);
+    await scrollToAction(tester, '更换手机');
     await tester.tap(find.text('更换手机'));
     await tester.pumpAndSettle();
     expect(find.text('更换主控手机'), findsOneWidget);
@@ -96,9 +104,9 @@ void main() {
   ) async {
     final client = PairingPreviewClient();
     await devicePage(tester, client);
-    await tester.scrollUntilVisible(find.text('修改配对码'), 200);
-    expect(find.textContaining('同一时间仅一台连接'), findsOneWidget);
-    expect(find.textContaining('已有手机仍可使用'), findsOneWidget);
+    await scrollToAction(tester, '修改配对码');
+    expect(find.textContaining('同一时间只能连接 1 台'), findsOneWidget);
+    expect(find.textContaining('最多保存 8 台手机'), findsOneWidget);
     expect(find.text('更换手机'), findsNothing);
     expect(find.text('取消换绑窗口'), findsNothing);
     expect(client.sent, isEmpty);
@@ -108,7 +116,7 @@ void main() {
     (tester) async {
       final client = PairingPreviewClient(connected: false);
       await devicePage(tester, client);
-      expect(find.textContaining('默认参数已内置'), findsOneWidget);
+      expect(find.textContaining('默认参数已内置'), findsNothing);
       expect(find.byType(TextField), findsNothing);
       await tester.scrollUntilVisible(find.text('高级维护'), 200);
       expect(find.text('保存自定义范围'), findsNothing);

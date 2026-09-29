@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'core/safety_limits.dart';
+import 'core/control_status.dart';
 import 'infrastructure/reactive_ble_link.dart' show requestBlePermissions;
 import 'joystick_pad.dart';
 import 'runtime/control_client.dart';
@@ -108,6 +109,17 @@ class _ControlShellState extends State<ControlShell>
   DateTime? _lastJoystickSend;
   DateTime? _lastEyelidSend;
   String? _joystickEndpoint;
+  String? _localError;
+
+  void _showError(Object error) {
+    _localError = error.toString();
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('操作未完成，请查看设备诊断信息')));
+      setState(() {});
+    }
+  }
 
   @override
   void initState() {
@@ -162,15 +174,14 @@ class _ControlShellState extends State<ControlShell>
 
   Future<void> _run(Future<void> Function() action) async {
     if (busy) return;
-    setState(() => busy = true);
+    setState(() {
+      busy = true;
+      _localError = null;
+    });
     try {
       await action();
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
-      }
+      _showError(error);
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -219,11 +230,7 @@ class _ControlShellState extends State<ControlShell>
     try {
       await client.send('stop');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$e')));
-      }
+      _showError(e);
     }
   }
 
@@ -244,13 +251,7 @@ class _ControlShellState extends State<ControlShell>
         .send('manual', {
           'values': [x, y, -1],
         })
-        .catchError((Object error) {
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(error.toString())));
-          }
-        });
+        .catchError((Object error) => _showError(error));
   }
 
   void _releaseJoystick() {
@@ -275,13 +276,7 @@ class _ControlShellState extends State<ControlShell>
         .send('manual', {
           'values': [-1, -1, value],
         })
-        .catchError((Object error) {
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(error.toString())));
-          }
-        });
+        .catchError((Object error) => _showError(error));
   }
 
   Widget _sectionTitle(String title, {String? description}) => Column(
@@ -314,17 +309,7 @@ class _ControlShellState extends State<ControlShell>
 
   Widget _statusCard(Map<String, dynamic> state) {
     final connection = state['connection'] as String? ?? 'disconnected';
-    final label = switch (connection) {
-      'connected' =>
-        state['outputAuthorized'] == true ? '已连接 · 输出已启用' : '已连接 · 动作暂停',
-      'connecting' => '连接 / 系统配对中',
-      'searching' => '正在发现',
-      'found' => '发现设备',
-      'no_results' => '未发现设备',
-      'reconnecting' => '连接中断，恢复中',
-      'failed' => '连接失败',
-      _ => '尚未连接',
-    };
+    final label = controlStatus(state);
     final active = connection == 'connected';
     final battery = state['battery'];
     final batteryTime = DateTime.tryParse(state['batteryAt']?.toString() ?? '');
@@ -364,10 +349,11 @@ class _ControlShellState extends State<ControlShell>
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      deviceId != null ? '$deviceId' : '前往设备页搜索附近的觉瞳',
-                      style: const TextStyle(color: _muted, fontSize: 12),
-                    ),
+                    if (deviceId != null)
+                      const Text(
+                        '觉瞳',
+                        style: TextStyle(color: _muted, fontSize: 12),
+                      ),
                   ],
                 ),
               ),
@@ -379,10 +365,6 @@ class _ControlShellState extends State<ControlShell>
             spacing: 8,
             runSpacing: 8,
             children: [
-              _pill(
-                '本地模式 · ${state['mode'] == 'auto' ? '自动' : '手动'}',
-                Icons.tune_rounded,
-              ),
               _pill(
                 battery == null
                     ? '电量未知'
@@ -421,7 +403,7 @@ class _ControlShellState extends State<ControlShell>
     final armed = state['outputAuthorized'] == true;
     final target = state['target'] as List?;
     return _page([
-      _sectionTitle('控制', description: '看清状态，再开始动作'),
+      _sectionTitle('控制'),
       const SizedBox(height: 18),
       _statusCard(state),
       const SizedBox(height: 22),
@@ -431,19 +413,15 @@ class _ControlShellState extends State<ControlShell>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '准备连接',
+                '尚未连接觉瞳',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 7),
-              const Text(
-                '打开手机蓝牙即可连接觉瞳，不需要 Wi-Fi 或热点。已内置默认参数，连接会自动启用输出；设备已被其他手机连接时暂时无法连接。',
-                style: TextStyle(color: _muted),
-              ),
               const SizedBox(height: 14),
               FilledButton.icon(
                 onPressed: () => setState(() => tab = 2),
                 icon: const Icon(Icons.arrow_forward_rounded),
-                label: const Text('前往设备页'),
+                label: const Text('连接设备'),
               ),
             ],
           ),
@@ -453,40 +431,38 @@ class _ControlShellState extends State<ControlShell>
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '设备已连接，输出已暂停或尚未就绪',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '默认参数已内置，连接及重连会自动启用输出。手动暂停后可在这里恢复；设备报告配置异常时，请查看错误原因。',
-                style: TextStyle(color: _muted),
+              Text(
+                controlStatus(state),
+                style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: busy ? null : _arm,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('开始输出'),
-              ),
-              TextButton(
-                onPressed: () => setState(() => tab = 2),
-                child: const Text('查看设备'),
-              ),
+              if (state['controlPhase'] == 'paused' ||
+                  state['controlPhase'] == 'actionFailed' ||
+                  state['controlPhase'] == 'ready')
+                FilledButton.icon(
+                  onPressed: busy ? null : _arm,
+                  icon: const Icon(Icons.play_arrow),
+                  label: Text(
+                    state['controlPhase'] == 'ready' ? '启用控制' : '恢复控制',
+                  ),
+                ),
+              if (needsControlAttention(state))
+                TextButton(
+                  onPressed: () => setState(() => tab = 2),
+                  child: const Text('查看详情'),
+                ),
             ],
           ),
         ),
       ],
       if (connected && armed && target != null) ...[
-        _sectionTitle('手动控制', description: '摇杆实时控制方向；显示的是目标，不是位置遥测'),
+        _sectionTitle('手动控制'),
         const SizedBox(height: 12),
         _panel(
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '方向摇杆 · CH1 / CH2',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
+              const Text('方向', style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               JoystickPad(
                 x: values[0],
@@ -496,19 +472,14 @@ class _ControlShellState extends State<ControlShell>
               ),
               const SizedBox(height: 8),
               Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Expanded(
-                    child: Text(
-                      'CH1 ${target[0]}  ·  CH2 ${target[1]}',
-                      style: const TextStyle(color: _muted, fontSize: 12),
-                    ),
-                  ),
                   TextButton.icon(
                     onPressed: busy
                         ? null
                         : () => _sendJoystick(.5, .5, force: true),
                     icon: const Icon(Icons.center_focus_strong_rounded),
-                    label: const Text('方向回中'),
+                    label: const Text('复位方向'),
                   ),
                 ],
               ),
@@ -517,7 +488,6 @@ class _ControlShellState extends State<ControlShell>
                 child: SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('松手回中'),
-                  subtitle: const Text('仅回中 CH1 / CH2，眼皮保持原值'),
                   value: resetStickOnRelease,
                   onChanged: (value) =>
                       setState(() => resetStickOnRelease = value),
@@ -528,13 +498,9 @@ class _ControlShellState extends State<ControlShell>
                 children: [
                   const Expanded(
                     child: Text(
-                      '眼皮 · CH3',
+                      '眼皮',
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
-                  ),
-                  Text(
-                    '${target[2]}',
-                    style: const TextStyle(color: _muted, fontSize: 12),
                   ),
                 ],
               ),
@@ -546,11 +512,6 @@ class _ControlShellState extends State<ControlShell>
                     ? null
                     : (value) => _sendEyelid(value, force: true),
               ),
-              const SizedBox(height: 6),
-              const Text(
-                '拖动实时调整眼皮，方向保持不变',
-                style: TextStyle(color: _muted, fontSize: 12),
-              ),
             ],
           ),
         ),
@@ -560,16 +521,11 @@ class _ControlShellState extends State<ControlShell>
           child: OutlinedButton.icon(
             onPressed: _pause,
             icon: const Icon(Icons.stop_circle_outlined),
-            label: const Text('停止自动与动作'),
+            label: Text(state['controlPhase'] == 'pausing' ? '暂停中…' : '暂停控制'),
           ),
         ),
-        const SizedBox(height: 8),
-        const Text(
-          '暂停会取消调度并请求设备保持最后输出；需收到业务确认。没有真实位置遥测。',
-          style: TextStyle(color: _muted, fontSize: 12),
-        ),
         const SizedBox(height: 22),
-        _sectionTitle('持续行为', description: '锁屏时由后台会话持有'),
+        _sectionTitle('自动动作'),
         const SizedBox(height: 12),
         _panel(
           Column(
@@ -577,7 +533,6 @@ class _ControlShellState extends State<ControlShell>
               _behaviorRow(
                 Icons.explore_rounded,
                 '自动转动',
-                'CH1 / CH2 缓慢变化',
                 state['autoRotate'] == true,
                 (value) =>
                     _run(() => client.send('rotate', {'enabled': value})),
@@ -586,7 +541,6 @@ class _ControlShellState extends State<ControlShell>
               _behaviorRow(
                 Icons.visibility_rounded,
                 '自动眨眼',
-                'CH3 定时触发预设',
                 state['autoWink'] == true,
                 (value) =>
                     _run(() => client.send('winkAuto', {'enabled': value})),
@@ -601,7 +555,6 @@ class _ControlShellState extends State<ControlShell>
   Widget _behaviorRow(
     IconData icon,
     String title,
-    String detail,
     bool enabled,
     ValueChanged<bool> onChanged,
   ) => Row(
@@ -609,15 +562,9 @@ class _ControlShellState extends State<ControlShell>
       Icon(icon, color: _accent),
       const SizedBox(width: 13),
       Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-            Text(detail, style: const TextStyle(color: _muted, fontSize: 12)),
-          ],
+        child: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
         ),
       ),
       Switch(value: enabled, onChanged: busy ? null : onChanged),
@@ -629,13 +576,13 @@ class _ControlShellState extends State<ControlShell>
         state['connection'] == 'connected' && state['outputAuthorized'] == true;
     final playing = state['playback'] == 'playing';
     return _page([
-      _sectionTitle('动作', description: '保留觉瞳已有的眨眼预设'),
+      _sectionTitle('动作'),
       const SizedBox(height: 18),
       _statusCard(state),
       const SizedBox(height: 22),
       for (final entry in [
-        ('wink', '轻眨一下', '闭合 → 睁开', Icons.visibility_outlined),
-        ('wink2', '连眨两下', '闭合 → 睁开 × 2', Icons.auto_awesome_rounded),
+        ('wink', '轻眨一下', Icons.visibility_outlined),
+        ('wink2', '连眨两下', Icons.auto_awesome_rounded),
       ]) ...[
         _panel(
           Row(
@@ -647,25 +594,16 @@ class _ControlShellState extends State<ControlShell>
                   color: _accent.withValues(alpha: .13),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(entry.$4, color: _accent),
+                child: Icon(entry.$3, color: _accent),
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.$2,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      entry.$3,
-                      style: const TextStyle(color: _muted, fontSize: 12),
-                    ),
-                  ],
+                child: Text(
+                  entry.$2,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               IconButton.filledTonal(
@@ -689,11 +627,6 @@ class _ControlShellState extends State<ControlShell>
                 '动作播放中',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                '设备没有动作完成确认；这里展示的是本地调度状态。',
-                style: TextStyle(color: _muted),
-              ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: _pause,
@@ -704,7 +637,7 @@ class _ControlShellState extends State<ControlShell>
           ),
         ),
       if (!connected)
-        const Text('连接设备并自动启用输出后可播放预设动作。', style: TextStyle(color: _muted)),
+        const Text('连接设备后可播放动作。', style: TextStyle(color: _muted)),
     ]);
   }
 
@@ -742,6 +675,29 @@ class _ControlShellState extends State<ControlShell>
     }
   }
 
+  String _addressSuffix(Object? address) {
+    final value = address?.toString() ?? '';
+    return value.length > 5 ? value.substring(value.length - 5) : value;
+  }
+
+  void _showPairingHelp() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('配对帮助'),
+        content: const Text(
+          '新设备默认配对码：123456。修改过请使用新码。配对名额已满或需要清除绑定时，可使用 USB 维护工具。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _devicePage(Map<String, dynamic> state) {
     final connected = state['connection'] == 'connected';
     final active =
@@ -751,7 +707,7 @@ class _ControlShellState extends State<ControlShell>
     final armed = state['outputAuthorized'] == true;
     final discovered = (state['discovered'] as List? ?? []).cast<Map>();
     return _page([
-      _sectionTitle('设备', description: '通过蓝牙连接附近的觉瞳'),
+      _sectionTitle('设备'),
       const SizedBox(height: 18),
       _statusCard(state),
       const SizedBox(height: 18),
@@ -760,30 +716,19 @@ class _ControlShellState extends State<ControlShell>
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('身份：${state['identity'] ?? '等待认证'}'),
-              Text('固件：${state['firmware'] ?? '未知'}'),
-              Text('会话：${state['sessionPhase'] ?? '等待连接'}'),
-              Text('最近业务确认：${state['lastAckSequence'] ?? '未知'}'),
-              Text('已执行序号：${state['lastAppliedSequence'] ?? '未知'}'),
-              Text(
-                '已下发逻辑值：${state['validChannelMask'] == 7 ? state['lastCommanded'] : '未知'}',
-              ),
-              const Text('实际机械位置：未知', style: TextStyle(color: _muted)),
+              const Text('觉瞳', style: TextStyle(fontWeight: FontWeight.w700)),
+              Text(controlStatus(state), style: const TextStyle(color: _muted)),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () async {
                   try {
                     await client.send('disconnect');
                   } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text('$e')));
-                    }
+                    _showError(e);
                   }
                 },
                 icon: const Icon(Icons.link_off),
-                label: const Text('断开控制会话'),
+                label: const Text('断开连接'),
               ),
             ],
           ),
@@ -798,10 +743,7 @@ class _ControlShellState extends State<ControlShell>
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
               ),
               const SizedBox(height: 8),
-              const Text(
-                '新版固件的全新设备首次配对码为123456。已有设备仍使用此前设置的码。多台手机可用同一码配对并轮流连接，最多保存8台；同一时间仅一台连接。默认参数已内置，连接自动启用输出。',
-                style: TextStyle(color: _muted),
-              ),
+              const Text('连接后会启用舵机。', style: TextStyle(color: _muted)),
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: busy || state['connection'] == 'searching'
@@ -812,6 +754,10 @@ class _ControlShellState extends State<ControlShell>
                   state['connection'] == 'searching' ? '正在搜索…' : '搜索附近觉瞳',
                 ),
               ),
+              TextButton(
+                onPressed: () => _showPairingHelp(),
+                child: const Text('配对帮助'),
+              ),
             ],
           ),
         ),
@@ -821,15 +767,11 @@ class _ControlShellState extends State<ControlShell>
             try {
               await client.send('disconnect');
             } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('$e')));
-              }
+              _showError(e);
             }
           },
           icon: const Icon(Icons.bluetooth_disabled),
-          label: const Text('结束蓝牙会话'),
+          label: const Text('断开连接'),
         ),
       if (!active) ...[
         const SizedBox(height: 20),
@@ -854,7 +796,7 @@ class _ControlShellState extends State<ControlShell>
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       Text(
-                        '${device['id']} · ${device['rssi']} dBm',
+                        '设备尾号 ${_addressSuffix(device['id'])}',
                         style: const TextStyle(color: _muted, fontSize: 12),
                       ),
                     ],
@@ -884,7 +826,7 @@ class _ControlShellState extends State<ControlShell>
             children: [
               Text(
                 state['supportsSharedPairing'] == true
-                    ? '支持最多8台手机保存配对，同一时间仅一台连接。当前手机断开后，其他手机即可连接；无需换绑。修改配对码只影响后续新配对，已有手机仍可使用。'
+                    ? '最多保存 8 台手机，同一时间只能连接 1 台。'
                     : state['supportsOwnerManagement'] == true
                     ? '当前固件仅支持单手机绑定，更换手机需要开启换绑窗口。升级设备固件后可多手机轮流使用。'
                     : '此固件不支持在手机上管理配对，请先升级设备固件。',
@@ -925,10 +867,88 @@ class _ControlShellState extends State<ControlShell>
           ),
         ),
       ],
+      if (active) ...[
+        const SizedBox(height: 16),
+        ExpansionTile(
+          title: const Text('设备详情'),
+          childrenPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
+          ),
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('固件版本：${state['firmware'] ?? '未知'}'),
+            ),
+          ],
+        ),
+      ],
+      ExpansionTile(
+        title: const Text('诊断信息'),
+        childrenPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 8,
+        ),
+        children: [
+          if (active) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('设备地址：${state['deviceId'] ?? '未知'}'),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('身份：${state['identity'] ?? '等待认证'}'),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('会话：${state['sessionPhase'] ?? '等待连接'}'),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('最近业务确认：${state['lastAckSequence'] ?? '未知'}'),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('已执行序号：${state['lastAppliedSequence'] ?? '未知'}'),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '已下发逻辑值（控制目标）：${state['validChannelMask'] == 7 ? state['lastCommanded'] : '未知'}',
+              ),
+            ),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text('实际机械位置：未知'),
+            ),
+          ],
+          for (final device in discovered)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${device['name'] ?? '觉瞳'}：${device['id'] ?? '未知'} · ${device['rssi'] ?? '未知'} dBm',
+              ),
+            ),
+          if (state['error'] != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('设备错误：${state['error']}'),
+            ),
+          if (client.message != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('后台错误：${client.message}'),
+            ),
+          if (_localError != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('界面错误：$_localError'),
+            ),
+        ],
+      ),
       const SizedBox(height: 20),
       ExpansionTile(
         title: const Text('高级维护'),
-        subtitle: const Text('已内置默认参数，日常使用无需设置'),
         children: [
           const Text('自定义逻辑范围（可选，暂停后修改）', style: TextStyle(color: _muted)),
           _panel(
@@ -984,11 +1004,6 @@ class _ControlShellState extends State<ControlShell>
           ),
         ],
       ),
-      const SizedBox(height: 20),
-      const Text(
-        '配对名额已满或需要清除手机绑定时，通过 USB 维护工具处理。电量与实际位置无测量时显示未知；Android 锁屏持续控制仍需真机验收。',
-        style: TextStyle(color: _muted, fontSize: 12),
-      ),
     ]);
   }
 
@@ -1014,21 +1029,18 @@ class _ControlShellState extends State<ControlShell>
               '觉瞳',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
             ),
-            Text(
-              '技术验证版 · BLE 控制',
-              style: TextStyle(fontSize: 11, color: _muted),
-            ),
+            Text('测试版', style: TextStyle(fontSize: 11, color: _muted)),
           ],
         ),
         actions: [
           if (state['connection'] == 'connected')
             IconButton(
-              tooltip: '停止自动与动作',
+              tooltip: '暂停控制',
               icon: const Icon(Icons.stop_circle_outlined),
               onPressed: _pause,
             ),
           IconButton(
-            tooltip: '刷新后台状态',
+            tooltip: '刷新状态',
             icon: const Icon(Icons.refresh_rounded),
             onPressed: () => client.restore(),
           ),
@@ -1036,13 +1048,20 @@ class _ControlShellState extends State<ControlShell>
       ),
       body: Column(
         children: [
-          if (client.message != null || state['error'] != null)
+          if (needsControlAttention(state) ||
+              (state['connection'] == 'failed') ||
+              client.message != null ||
+              _localError != null)
             Container(
               width: double.infinity,
               color: const Color(0xFF543037),
               padding: const EdgeInsets.all(10),
               child: Text(
-                '${client.message ?? state['error']}',
+                needsControlAttention(state)
+                    ? controlStatus(state)
+                    : state['connection'] == 'failed'
+                    ? '连接失败，请查看诊断信息'
+                    : '操作未完成，请查看设备诊断信息',
                 textAlign: TextAlign.center,
               ),
             ),
@@ -1103,7 +1122,7 @@ class _PairingCodeDialogState extends State<_PairingCodeDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('保存前会暂停动作。改码不会解除当前手机绑定；请自行保存新码，App 不会保存或显示它。'),
+            const Text('已配对手机仍可连接。请保存新码，应用不会记录。保存会暂停控制。'),
             const SizedBox(height: 16),
             TextFormField(
               controller: first,

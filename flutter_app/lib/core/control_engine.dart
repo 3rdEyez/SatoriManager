@@ -39,6 +39,9 @@ class ControlEngine {
   bool autoWink = false;
   bool outputAuthorized = false;
   String? error;
+  String? issueCode;
+  bool pauseInProgress = false;
+  bool explicitlyPaused = false;
   String? deviceId;
   String? _identity;
   SafetyLimits? safety;
@@ -87,6 +90,24 @@ class ControlEngine {
       'battery': s.state?.batteryPercent,
       'safety': safety?.toJson(),
       'error': error ?? s.lastError,
+      'issueCode': issueCode,
+      'controlPhase': pauseInProgress
+          ? 'pausing'
+          : issueCode == 'pauseUnconfirmed'
+          ? 'pauseUnconfirmed'
+          : issueCode == 'configuration'
+          ? 'configurationError'
+          : issueCode == 'outputUnconfirmed'
+          ? 'outputUnconfirmed'
+          : issueCode == 'outputFailed'
+          ? 'ready'
+          : issueCode == 'actionFailed'
+          ? 'actionFailed'
+          : outputAuthorized
+          ? 'active'
+          : explicitlyPaused
+          ? 'paused'
+          : 'preparing',
     };
   }
 
@@ -135,12 +156,14 @@ class ControlEngine {
     _autoStartPending = true;
     _cancelMotion();
     outputAuthorized = false;
+    explicitlyPaused = false;
     target = null;
     safety = limits ?? SafetyLimits.builtInSatoriC3;
     deviceId = id;
     _identity = expectedIdentity;
     connection = 'connecting';
     error = null;
+    issueCode = null;
     _connecting = true;
     _notify();
     try {
@@ -192,6 +215,7 @@ class ControlEngine {
     if (connection != 'connected') return;
     safety ??= SafetyLimits.builtInSatoriC3;
     _autoStartPending = false;
+    _notify();
     try {
       await _arm(generation, autoStart: true);
       if (!session.snapshot.isConnected) {
@@ -222,6 +246,11 @@ class ControlEngine {
             : haltConfirmed
             ? '自动启用输出失败，已确认设备暂停：$e'
             : '自动启用输出状态未确认，请检查设备连接并手动暂停：$e';
+        issueCode = notConfigured
+            ? 'configuration'
+            : haltConfirmed
+            ? 'outputFailed'
+            : 'outputUnconfirmed';
         outputAuthorized = false;
         target = null;
         _notify();
@@ -241,6 +270,7 @@ class ControlEngine {
     final generation = _motionGeneration;
     final connectionGeneration = _connectionGeneration;
     error = null;
+    issueCode = null;
     await session.arm(
       beforeSend: () {
         if (generation != _motionGeneration ||
@@ -267,6 +297,7 @@ class ControlEngine {
     }
     target = List.of(state.channels);
     outputAuthorized = true;
+    explicitlyPaused = false;
     _notify();
   }
 
@@ -427,11 +458,16 @@ class ControlEngine {
       // Preset/manual priority may replace an unsent automatic target.
     } catch (e) {
       if (generation != _motionGeneration || _disposed) return;
-      error = '$e';
+      final actionError = '$e';
       try {
         await stopMotion();
       } catch (_) {
         /* stopMotion retains unconfirmed state */
+      }
+      if (issueCode == null && !outputAuthorized) {
+        error = actionError;
+        issueCode = 'actionFailed';
+        _notify();
       }
     }
   }
@@ -453,16 +489,28 @@ class ControlEngine {
     ++_autoStartGeneration;
     _cancelMotion();
     outputAuthorized = false;
+    explicitlyPaused = true;
+    pauseInProgress = true;
+    issueCode = null;
+    error = null;
     _notify();
     // A stop issued while a connection is still being established cancels
     // that generation's automatic ARM. There is no claimed session to HALT.
-    if (!session.snapshot.isConnected) return;
+    if (!session.snapshot.isConnected) {
+      pauseInProgress = false;
+      _notify();
+      return;
+    }
     try {
       await session.halt();
     } catch (e) {
       error = '暂停未确认：$e';
+      issueCode = 'pauseUnconfirmed';
       _notify();
       rethrow;
+    } finally {
+      pauseInProgress = false;
+      _notify();
     }
     _notify();
   }

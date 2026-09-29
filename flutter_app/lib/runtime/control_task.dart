@@ -8,6 +8,7 @@ import '../core/ble_protocol.dart';
 import '../core/device_session.dart';
 import '../core/protocol.dart';
 import '../core/safety_limits.dart';
+import '../core/control_status.dart';
 import '../infrastructure/reactive_ble_link.dart';
 import 'client_generation_guard.dart';
 
@@ -42,25 +43,7 @@ class ControlTask extends TaskHandler {
   void publish() {
     if (destroying || engine == null) return;
     final state = snapshot();
-    final status = switch (state['connection']) {
-      'connected'
-          when state['autoRotate'] == true || state['autoWink'] == true =>
-        '自动控制中',
-      'connected' when state['playback'] == 'playing' => '动作播放中',
-      'connected' when state['outputAuthorized'] == true => '输出已启用',
-      'connected' when '${state['error'] ?? ''}'.contains('尚未配置') =>
-        '启动姿态未配置，输出已暂停',
-      'connected' => '已连接并暂停',
-      'reconnecting' => '连接中断，正在恢复；重新连接后会再次启用输出',
-      'connecting' => '正在连接或等待系统配对',
-      'searching' => '正在搜索附近觉瞳',
-      'failed' => '连接失败，请返回应用处理',
-      _ => '未连接设备',
-    };
-    final statusText = '${state['error'] ?? ''}'.contains('未确认')
-        ? '操作未确认，请查看应用'
-        : status;
-    final display = '${state['deviceId'] ?? '觉瞳'} · $statusText';
+    final display = '觉瞳 · ${controlStatus(state)}';
     if (display != notificationStatus) {
       notificationStatus = display;
       unawaited(FlutterForegroundTask.updateService(notificationText: display));
