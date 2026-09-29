@@ -20,6 +20,22 @@ void main() {
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
+    final timing = vectors['timing'] as Map;
+    expect(
+      BleProtocol.commandTimeout.inMilliseconds,
+      timing['command_timeout_ms'],
+    );
+    expect(BleProtocol.commandMaxRetries, timing['command_max_retries']);
+    expect(
+      BleProtocol.releaseAckWindow.inMilliseconds,
+      timing['release_ack_window_ms'],
+    );
+    expect(
+      BleProtocol.releaseAckWindow,
+      greaterThan(
+        BleProtocol.commandTimeout * (BleProtocol.commandMaxRetries + 1),
+      ),
+    );
     for (final item in vectors['reads'] as List) {
       final vector = item as Map<String, dynamic>;
       final bytes = unhex(vector['hex'] as String);

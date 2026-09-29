@@ -73,8 +73,8 @@ class DeviceSession {
   DeviceSession(
     this.link, {
     this.expectedDeviceIdentity,
-    this.commandTimeout = const Duration(milliseconds: 500),
-    this.maxRetries = 3,
+    this.commandTimeout = BleProtocol.commandTimeout,
+    this.maxRetries = BleProtocol.commandMaxRetries,
   }) : _postClaimSequenceForTesting = null {
     _listenLink();
   }
@@ -85,8 +85,8 @@ class DeviceSession {
     this.link, {
     required int nextSequence,
     this.expectedDeviceIdentity,
-    this.commandTimeout = const Duration(milliseconds: 500),
-    this.maxRetries = 3,
+    this.commandTimeout = BleProtocol.commandTimeout,
+    this.maxRetries = BleProtocol.commandMaxRetries,
   }) : _postClaimSequenceForTesting = nextSequence {
     if (nextSequence < 2 || nextSequence > 0xffffffff) {
       throw ArgumentError.value(nextSequence, 'nextSequence');
@@ -129,6 +129,7 @@ class DeviceSession {
   Duration? _lastTargetSentAt;
   Timer? _stateRefresh;
   bool _stateReadInProgress = false;
+  bool _releaseInProgress = false;
 
   void _emit(DeviceSessionSnapshot next) {
     if (_disposed) return;
@@ -448,8 +449,10 @@ class DeviceSession {
 
   Future<void> release() async {
     if (_token == 0) return;
+    _releaseInProgress = true;
     cancelPendingTargets();
     _keepalive?.cancel();
+    _stateRefresh?.cancel();
     try {
       await _enqueueCommand(BleOpcode.release);
     } finally {
@@ -460,6 +463,8 @@ class DeviceSession {
   }
 
   Future<void> disconnect() async {
+    _releaseInProgress = true;
+    _stateRefresh?.cancel();
     ++_generation;
     cancelPendingTargets();
     _keepalive?.cancel();
@@ -643,7 +648,8 @@ class DeviceSession {
   }
 
   Future<void> _refreshState() async {
-    if (_stateReadInProgress ||
+    if (_releaseInProgress ||
+        _stateReadInProgress ||
         _token == 0 ||
         !_snapshot.isConnected ||
         _disposed) {
@@ -653,7 +659,9 @@ class DeviceSession {
     final generation = _generation, token = _token;
     try {
       final next = await _readSnapshot(generation);
-      if (generation != _generation || token != _token) return;
+      if (_releaseInProgress || generation != _generation || token != _token) {
+        return;
+      }
       if (next.version != 1 || next.token != token) {
         await link.disconnect();
         return;
@@ -714,7 +722,7 @@ class DeviceSession {
   final Map<int, int> _pendingOpcodes = {};
   int _opcodeForPending(int seq) => _pendingOpcodes[seq] ?? 0;
   void _ensureReady() {
-    if (_token == 0 || !_snapshot.isConnected) {
+    if (_releaseInProgress || _token == 0 || !_snapshot.isConnected) {
       throw StateError('No claimed BLE session');
     }
   }
@@ -748,6 +756,7 @@ class DeviceSession {
 
   void _invalidate(String reason) {
     _generation++;
+    _releaseInProgress = false;
     _token = 0;
     _keepalive?.cancel();
     _stateRefresh?.cancel();

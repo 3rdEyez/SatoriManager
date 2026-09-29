@@ -13,7 +13,8 @@ snapshots. UI recreation does not transfer a connection or restart actions.
 The flow is scan → connect → protected access/system pairing → authenticated
 identity check → EventTX subscription → CLAIM → load built-in or saved limits → automatic ARM.
 Every reconnect also requests ARM, without replaying prior actions. A pause cancels
-the pending start for that connection. Built-in product defaults remove mandatory setup. Explicit malformed board
+the pending start throughout the current recovery round, including backoff and
+failed attempts. Built-in product defaults remove mandatory setup. Explicit malformed board
 configuration still keeps output paused with an explanation. The App reads the
 resulting three-channel state before merging any partial movement. The built-in startup [1500,1500,1500] derives from the production Qt client;
 it is not presented as measured mechanical validation.
@@ -198,6 +199,7 @@ auto-start, falling back to the built-in satori_c3_v1 logical range 500..2500.
 The firmware uses the corresponding built-in startup posture unless maintenance
 configuration overrides it. Existing mechanical calibration and physical clamps
 remain in effect. No mandatory end-user configuration is shown; optional range
-overrides live in a collapsed maintenance section. Explicit pauses cancel pending starts for the current connection;
-a later reconnect starts again, as requested by the user. Historical records below
+overrides live in a collapsed maintenance section. Explicit pauses cancel pending starts across the current recovery round;
+its retries may restore connectivity but cannot reauthorize output. An explicit
+new connection or independent later loss starts a new recovery intent. Historical records below
 or in the report describing paused reconnects apply to previous releases only.

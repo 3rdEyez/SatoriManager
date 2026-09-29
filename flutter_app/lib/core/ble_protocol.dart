@@ -8,6 +8,11 @@ class BleProtocol {
   static const stateSnapshotUuid = '4d89f6a0-73b9-4f14-9d3e-63b2145a0005';
   static const version = 1;
   static const frameLength = 20;
+  static const commandTimeout = Duration(milliseconds: 500);
+  static const commandMaxRetries = 3;
+  // Four attempts (2000 ms) plus 1000 ms link/scheduling margin, measured
+  // by the device from completed RELEASE, never from request acceptance.
+  static const releaseAckWindow = Duration(milliseconds: 3000);
 
   static List<int> encodeControlFrame({
     required BleOpcode opcode,

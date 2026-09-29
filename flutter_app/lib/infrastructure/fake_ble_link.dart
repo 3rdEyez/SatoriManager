@@ -383,7 +383,7 @@ class FakeBleLink implements BleLink {
         _released = true;
         responseToken = frame.token;
         _releaseTimer?.cancel();
-        _releaseTimer = Timer(const Duration(milliseconds: 500), disconnect);
+        _releaseTimer = Timer(BleProtocol.releaseAckWindow, disconnect);
         break;
       case 5:
         _touchLease();

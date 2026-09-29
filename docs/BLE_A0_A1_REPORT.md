@@ -23,10 +23,10 @@
 
 | 文件 | SHA-256 |
 |---|---|
-| BLE v1.2 文档 | `dce99bbe98199781e6893fc59da95b22cd847ce549912f985c3fdaaf6c39065a` |
+| BLE v1.2 文档 | `13e6c166aa938bb8904dd58e30645c7dcce7678d977afa472c1075a84e1ec462` |
 | golden vectors（原控制协议） | `9f6a9d4b9759c9b36a7ef9c7f6aa0412f15ec8a81cd96128faec62917edbb14e` |
 | v1.1 管理向量（历史） | `a8d2869740b370af3e003f086e0f076c1db16ef42ef95222f1bb543493d2ad8a` |
-| v1.2 共享配对向量 | `29e0e4630dcbf503cb77b9c17689aa038673c0b916a456eec1b2e44a735bf9ed` |
+| v1.2 共享配对向量 | `0550f136fb109da8769a9a32ff3dfeb25f095e85419d9961e87a7c6a8982b9a7` |
 
 共同语料包含 8 个命令、8 个事件、5 个读取、14 个拒绝样例及 12 个状态场景。身份不匹配属于连接层场景；两端 wire codec 不把 DeviceIdentity 当控制帧解析。
 
@@ -179,3 +179,34 @@ ESP-IDF 5.5.4 下BLE与legacy两种profile构建及`idf.py size`通过。**7组�
 BLE实际生成配置MAX_BONDS=8、MAX_CONNECTIONS=1；DRAM106362字节（33.1%），FlashCode579250字节，应用分区剩余约63%。legacy DRAM122874字节（38.24%），FlashCode816380字节，应用分区剩余约50%。内建Wi-Fi SSID/密码为空；flash元数据仍只写bootloader、partition table和app，保留NVS/config分区。
 
 当前peer须出现在NimBLE保存的bond列表中并通过认证。由于SDK在持久化前先更新RAM，生产代码另包装store_write_cb记录密钥写入失败；失败后暂停会话并拒绝授权直到设备重启，避免将仅存在于RAM的记录当作成功保存。没有通过测试输出虚假的物理位置或电量，未烧录或运行硬件动作。
+
+
+## PR 审查修复：重连暂停意图与 RELEASE 确认窗口
+
+审查基线：App ffe02b5、固件 f954f27。P1修复将自动启动意图绑定到整轮断线恢复；退避等待、首次连接失败和后续重试不会重新取得被暂停撤销的ARM许可。普通未暂停的重连仍自动ARM，旧动作不回放。
+
+P2将RELEASE同帧确认窗口固定为3000 ms，从控制任务实际完成释放开始计时；对应客户端500 ms×4次尝试、另加1000 ms余量。释放完成即撤销token及插值，延长窗口不恢复控制权，重复请求不延长截止时间。App fake同步，并停止释放期间状态轮询、忽略已在途轮询的零token，避免其提前断开等待重试的链路。共同协议与向量时序字段同步。
+
+CI与本地验证分开记录：审查时App ffe02b5的GitHub Actions已成功，但执行的是格式、analyze、测试及debug APK；固件f954f27当时没有Actions运行/check-run。跨仓协议检查、三ABI release与固件主机/双配置构建的既有记录属于本地验证。CI扩展建议保留为后续，本轮保持上述最小修复范围。真机待验项目不因源码审查或本地测试变为通过。
+
+### 本轮 App 本地复验
+
+格式检查33文件、flutter analyze、全部98项测试、协议哈希检查及三ABI release构建通过。新增P1两条重连暂停回归；P2保持默认500 ms超时，分别丢1/3条RELEASE确认，模拟80 ms写入处理与60 ms通知延迟，并覆盖已在途状态轮询返回撤销token。正常释放仍在收到确认后立即断开，不等待3秒。
+
+| ABI | APK字节数 | SHA-256 |
+|---|---:|---|
+| arm64-v8a | 8682319 | `c7ed85908fd551c6b2464c97560b211d4c554242eeb69d1d59f4f1c5153b7154` |
+| armeabi-v7a | 8167297 | `e0083ea96bff67976a4478eaa04853894348eb2ca79a112a25e2162941d65e6d` |
+| x86_64 | 8858794 | `83a1bc9648eec6ab09dbcbe2a96f0e084bdd71e95d2a59cf6589108bff4ed52d` |
+
+
+### 本轮固件本地复验
+
+7组主机测试、ESP-IDF 5.5.4的BLE/legacy构建及size检查均通过。RELEASE回归覆盖受理后延迟完成、完成后500/1500/2999 ms缓存重放、3000 ms到期拒绝与断链、重复不续窗、拒绝CLAIM/旧缓存/SET_TARGET、不恢复token/运动以及uint32时钟回绕。v1.2 timing向量由两端测试消费。
+
+| profile | app.bin 字节数 | SHA-256 |
+|---|---:|---|
+| ble_primary | 777440 | `3dc07d171b9aeab5a80ab0b8b79bae25e11ee889ed9644351b8529ed72a0aad0` |
+| legacy_udp | 1050176 | `7618d93cd0558b141b7e71f6e83e4e6497453178128e74c7bf3657c57fa2779b` |
+
+BLE DRAM106362字节（33.1%）、FlashCode579512、应用分区余63%；legacy DRAM122874字节（38.24%）、FlashCode816380、余50%。App ARM64 APK v2验签通过（开发签名）。未烧录，硬件待验项保持不变。

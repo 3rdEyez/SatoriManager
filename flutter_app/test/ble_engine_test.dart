@@ -27,7 +27,9 @@ class TestTimer implements Timer {
 }
 
 class Harness {
-  final link = FakeBleLink();
+  Harness({FakeBleLink? link}) : link = link ?? FakeBleLink();
+
+  final FakeBleLink link;
   late final session = DeviceSession(link);
   final timers = <TestTimer>[];
   Duration time = Duration.zero;
@@ -171,6 +173,61 @@ void main() {
       expect(h.armCount, oldArmCount + 1);
     },
   );
+
+  test('pause during reconnect backoff persists when retry succeeds', () async {
+    final h = Harness();
+    addTearDown(h.close);
+    await h.connect();
+    final armCount = h.armCount;
+    await h.link.disconnect();
+    await h.flush();
+    expect(h.engine.connection, 'reconnecting');
+
+    await h.engine.stopMotion();
+    h.timers.last.fire();
+    await h.flush();
+
+    expect(h.engine.connection, 'connected');
+    expect(h.engine.outputAuthorized, false);
+    expect(h.armCount, armCount);
+  });
+
+  test('pause survives a failed reconnect attempt and later retry', () async {
+    final shared = FakeBleSharedDevice();
+    expect(shared.pairPhone('engine-phone', '123456'), isTrue);
+    expect(shared.pairPhone('blocking-phone', '123456'), isTrue);
+    final h = Harness(
+      link: FakeBleLink(sharedDevice: shared, phoneId: 'engine-phone'),
+    );
+    final blocker = FakeBleLink(
+      sharedDevice: shared,
+      phoneId: 'blocking-phone',
+    );
+    addTearDown(() async {
+      await h.close();
+      await blocker.dispose();
+    });
+    await h.connect();
+    final armCount = h.armCount;
+    await h.link.disconnect();
+    await h.flush();
+    await blocker.connect('fake');
+
+    h.timers.last.fire();
+    await h.flush();
+    expect(h.engine.connection, 'reconnecting');
+    expect(h.timers.last.delay, const Duration(seconds: 2));
+
+    await h.engine.stopMotion();
+    await blocker.disconnect();
+    h.timers.last.fire();
+    await h.flush();
+
+    expect(h.engine.connection, 'connected');
+    expect(h.engine.outputAuthorized, false);
+    expect(h.armCount, armCount);
+  });
+
   test(
     'pause racing ARM cannot reauthorize output from a late completion',
     () async {

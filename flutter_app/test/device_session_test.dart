@@ -94,6 +94,43 @@ class PairingWriteFailureLink implements BleLink {
   }
 }
 
+// Model processing/write delay plus independently delayed notifications, and
+// optionally keep a periodic state read in flight while RELEASE clears token.
+class DelayedReleaseLink implements BleLink {
+  DelayedReleaseLink(this.inner);
+  final FakeBleLink inner;
+  Completer<void>? heldSnapshotRead;
+  final snapshotReadStarted = Completer<void>();
+  @override
+  Stream<BleLinkState> get connectionState => inner.connectionState;
+  @override
+  Future<void> connect(String id) => inner.connect(id);
+  @override
+  Future<void> disconnect() => inner.disconnect();
+  @override
+  Future<List<int>> read(String uuid) async {
+    if (uuid == BleProtocol.stateSnapshotUuid && heldSnapshotRead != null) {
+      final held = heldSnapshotRead!;
+      heldSnapshotRead = null;
+      snapshotReadStarted.complete();
+      await held.future;
+    }
+    return inner.read(uuid);
+  }
+
+  @override
+  Stream<List<int>> subscribe(String uuid) => inner.subscribe(uuid).asyncMap((
+    bytes,
+  ) async {
+    if (BleProtocol.decodeEvent(bytes).opcode == BleOpcode.release.replyValue) {
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
+    return bytes;
+  });
+  @override
+  Future<void> write(String uuid, List<int> value) => inner.write(uuid, value);
+}
+
 void main() {
   test(
     'connect claims only after event subscription, then arm and target',
@@ -935,6 +972,55 @@ void main() {
       await link.dispose();
     },
   );
+
+  for (final lostReplies in [1, 3]) {
+    test(
+      'RELEASE confirms after $lostReplies lost ACKs at production timing',
+      () async {
+        final inner = FakeBleLink(writeDelay: const Duration(milliseconds: 80));
+        final link = DelayedReleaseLink(inner);
+        final session = DeviceSession(link); // Production 500 ms / 3 retries.
+        addTearDown(() async {
+          await session.dispose();
+          await inner.dispose();
+        });
+        await session.connect('synthetic');
+        expect(session.commandTimeout, const Duration(milliseconds: 500));
+        expect(session.maxRetries, 3);
+        Completer<void>? heldRead;
+        if (lostReplies == 1) {
+          heldRead = Completer<void>();
+          link.heldSnapshotRead = heldRead;
+          await link.snapshotReadStarted.future.timeout(
+            const Duration(seconds: 2),
+          );
+        }
+        inner.dropNextReplies = lostReplies;
+        final releasing = session.release();
+        // The outstanding read returns the now-revoked token during the retry
+        // window; it must not tear down the connection before the cached ACK.
+        if (heldRead != null) {
+          await Future<void>.delayed(const Duration(milliseconds: 130));
+          expect(inner.currentToken, 0);
+          heldRead.complete();
+        }
+        await releasing;
+        final writes = inner.writes
+            .where((b) => b[1] == BleOpcode.release.value)
+            .toList();
+        expect(writes.length, lostReplies + 1);
+        for (final bytes in writes) {
+          expect(bytes, orderedEquals(writes.first));
+        }
+        expect(
+          inner.acceptedCommands.where((b) => b[1] == BleOpcode.release.value),
+          hasLength(1),
+        );
+        expect(session.snapshot.phase, DeviceSessionPhase.disconnected);
+        expect(inner.currentToken, 0);
+      },
+    );
+  }
 
   test('RELEASE cannot be resurrected by replaying old CLAIM', () async {
     final link = FakeBleLink();

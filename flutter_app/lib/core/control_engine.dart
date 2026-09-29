@@ -108,7 +108,11 @@ class ControlEngine {
       connection = 'reconnecting';
       error = '连接中断，动作已取消';
       _reconnectAttempt = 0;
-      _scheduleReconnect(_connectionGeneration);
+      // A disconnect creates one recovery auto-start intent. Every retry in
+      // this backoff round shares it, so a pause can revoke it permanently.
+      final autoStartGeneration = ++_autoStartGeneration;
+      _autoStartPending = true;
+      _scheduleReconnect(_connectionGeneration, autoStartGeneration);
     }
     _notify();
   }
@@ -457,7 +461,7 @@ class ControlEngine {
     _notify();
   }
 
-  void _scheduleReconnect(int generation) {
+  void _scheduleReconnect(int generation, int autoStartGeneration) {
     const delays = [1, 2, 4, 8];
     if (_reconnectAttempt == delays.length) {
       connection = 'failed';
@@ -468,8 +472,6 @@ class ControlEngine {
     final delay = delays[_reconnectAttempt++];
     _reconnect = later(Duration(seconds: delay), () async {
       if (generation != _connectionGeneration || _ending || _disposed) return;
-      final autoStartGeneration = ++_autoStartGeneration;
-      _autoStartPending = true;
       _connecting = true;
       try {
         await session.disconnect();
@@ -489,7 +491,12 @@ class ControlEngine {
         error = '$e';
         await session.disconnect();
         if (generation == _connectionGeneration && !_ending) {
-          _scheduleReconnect(generation);
+          if (autoStartGeneration == _autoStartGeneration) {
+            // A failed attempt may not have reached ARM. Keep the intent for
+            // the next retry unless pause has advanced the generation.
+            _autoStartPending = true;
+          }
+          _scheduleReconnect(generation, autoStartGeneration);
         }
       } finally {
         if (generation == _connectionGeneration) _connecting = false;
