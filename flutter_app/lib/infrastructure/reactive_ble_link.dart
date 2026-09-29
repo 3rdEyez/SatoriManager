@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
@@ -163,6 +164,18 @@ class ReactiveBleLink implements BleLink {
         );
     try {
       await completer.future.timeout(const Duration(seconds: 25));
+      if (Platform.isAndroid) {
+        try {
+          await ble
+              .requestConnectionPriority(
+                deviceId: id,
+                priority: ConnectionPriority.highPerformance,
+              )
+              .timeout(const Duration(seconds: 2));
+        } catch (_) {
+          // This is a connection-parameter preference, not a prerequisite.
+        }
+      }
     } catch (_) {
       await disconnect();
       rethrow;

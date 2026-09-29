@@ -389,11 +389,7 @@ class DeviceSession {
     // the one pending slot instead of building a command/Future queue.
     try {
       while (_latestTarget != null && !_disposed) {
-        final payload = _latestTarget!;
-        final done = _latestTargetDone!;
         final generation = _targetGeneration;
-        _latestTarget = null;
-        _latestTargetDone = null;
         final hz = _snapshot.deviceInfo?.maxTargetHz ?? 20;
         final spacing = Duration(microseconds: 1000000 ~/ hz);
         final last = _lastTargetSentAt;
@@ -401,19 +397,18 @@ class DeviceSession {
           final wait = spacing - (_monotonic.elapsed - last);
           if (wait > Duration.zero) await Future<void>.delayed(wait);
         }
-        if (generation != _targetGeneration) {
-          if (!done.isCompleted) {
-            done.completeError(const TargetCancelledException());
-          }
-          continue;
-        }
+        if (generation != _targetGeneration || _latestTarget == null) continue;
+        // Keep the pending slot replaceable during the rate-limit wait.
+        final payload = _latestTarget!;
+        final done = _latestTargetDone!;
+        _latestTarget = null;
+        _latestTargetDone = null;
         try {
           await _enqueueCommand(
             BleOpcode.setTarget,
             payload: payload,
             targetGeneration: generation,
           );
-          _lastTargetSentAt = _monotonic.elapsed;
           if (!done.isCompleted) done.complete();
         } catch (e, st) {
           if (!done.isCompleted) done.completeError(e, st);
@@ -562,6 +557,9 @@ class DeviceSession {
       try {
         // Future.wait subscribes to the ACK completer before awaiting the
         // write, while bounding the entire write+business-ACK exchange.
+        if (opcode == BleOpcode.setTarget) {
+          _lastTargetSentAt = _monotonic.elapsed;
+        }
         final writeFuture = link.write(BleProtocol.controlRxUuid, bytes);
         unawaited(
           writeFuture.then(

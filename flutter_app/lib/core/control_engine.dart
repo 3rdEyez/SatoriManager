@@ -286,7 +286,12 @@ class ControlEngine {
     _cancelMotion();
     mode = 'manual';
     try {
-      await _send(next, generation: _motionGeneration, latestOnly: true);
+      await _send(
+        next,
+        generation: _motionGeneration,
+        latestOnly: true,
+        transitionMs: 50,
+      );
     } on TargetCancelledException {
       // A newer manual point or stop superseded this unsent point.
     }
@@ -304,6 +309,7 @@ class ControlEngine {
     List<int> next, {
     required int generation,
     bool latestOnly = false,
+    int transitionMs = 200,
   }) async {
     _requireControl();
     if (generation != _motionGeneration) return;
@@ -315,7 +321,7 @@ class ControlEngine {
       ch2: constrained[1],
       ch3: constrained[2],
       transitionMs: min(
-        200,
+        transitionMs,
         session.snapshot.deviceInfo?.maxTransitionMs ?? 200,
       ),
       latestOnly: latestOnly,

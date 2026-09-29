@@ -85,6 +85,8 @@ void main() {
     expect(h.engine.target, [1500, 1500, 1500]);
     await h.engine.setManual([0, 1, -1]);
     expect(h.engine.target, [1000, 1900, 1500]);
+    final manualPayload = h.targets.last.payload;
+    expect(manualPayload[6] | manualPayload[7] << 8, 50);
   });
 
   test(

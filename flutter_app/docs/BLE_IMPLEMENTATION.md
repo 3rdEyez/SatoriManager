@@ -203,3 +203,9 @@ overrides live in a collapsed maintenance section. Explicit pauses cancel pendin
 its retries may restore connectivity but cannot reauthorize output. An explicit
 new connection or independent later loss starts a new recovery intent. Historical records below
 or in the report describing paused reconnects apply to previous releases only.
+
+## 0.2.4 手动控制响应调整
+
+手动摇杆/眼皮使用 50 ms 过渡，预设与自动行为仍使用 200 ms。最新目标限频从实际发包时刻计算，避免 ACK 延迟之后再额外等待整个周期；限频等待期间只保留最新目标，松手最终值仍强制提交。保持设备声明的最高 20 Hz、写响应与业务 ACK、停止取消和会话隔离。Android 连接时请求 highPerformance 参数，失败或超时不阻止正常连接。
+
+验证：100 项 Flutter 测试、analyze 和 ARM64 release 构建；实机端到端延迟尚未量化，不能把 50 ms 过渡时间当作实测响应时间。

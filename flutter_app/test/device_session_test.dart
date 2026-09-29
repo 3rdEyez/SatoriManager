@@ -667,6 +667,34 @@ void main() {
     },
   );
 
+  test(
+    'rate-limit wait sends the newest target instead of a stale point',
+    () async {
+      final link = FakeBleLink();
+      final session = DeviceSession(link);
+      addTearDown(() async {
+        await session.dispose();
+        await link.dispose();
+      });
+      await session.connect('synthetic');
+      await session.arm();
+      await session.setTarget(ch1: 1500, ch2: 1500, ch3: 1500);
+      final obsolete = session.setTarget(ch1: 1600, ch2: 1500, ch3: 1500);
+      final cancelled = expectLater(
+        obsolete,
+        throwsA(isA<TargetCancelledException>()),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await session.setTarget(ch1: 1700, ch2: 1500, ch3: 1500);
+      await cancelled;
+      final targets = link.writes
+          .map(BleProtocol.decodeControlFrame)
+          .where((f) => f.opcode == BleOpcode.setTarget.value)
+          .map((f) => f.payload[0] | f.payload[1] << 8);
+      expect(targets, [1500, 1700]);
+    },
+  );
+
   test('continuous target updates do not starve keepalive', () async {
     final link = FakeBleLink();
     final session = DeviceSession(
