@@ -23,4 +23,4 @@
 
 `dart format --output=none --set-exit-if-changed lib test tool`、`flutter analyze`、`flutter test`、`flutter build apk --debug`。测试包括协议、模拟器标识、安全范围、定时取消、错误端点过滤、失联恢复、真实 UDP 环回。
 
-真机待验证：前台手动/自动/眨眼、30 分钟和 2 小时无调试器锁屏、切换 App、网络中断、通知停止、划掉任务、系统回收及强制停止。记录手机型号、Android 版本、App commit、固件版本、网络拓扑和省电设置。模拟器通过不表示觉瞳或锁屏通过。
+真机待验证：前台手动/自动/眨眼、30 分钟和 2 小时无调试器锁屏、切换 App、网络中断、通知停止、划掉任务、系统回收及强制停止。记录手机型号、Android 版本、App commit、固件版本、网络拓扑和省电设置。模拟器通过不表示觉瞳或锁屏通过。当前硬件串口诊断证据和剩余验收步骤见 [HARDWARE_VALIDATION.md](HARDWARE_VALIDATION.md)。
