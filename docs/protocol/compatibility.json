@@ -1,0 +1,10 @@
+{
+  "protocol": "SatoriEye BLE v1.2",
+  "source": "ESP-3RDEYE/docs/ble/v1",
+  "files": {
+    "satori-ble-v1.md": "dce99bbe98199781e6893fc59da95b22cd847ce549912f985c3fdaaf6c39065a",
+    "satori_ble_v1_golden_vectors.json": "9f6a9d4b9759c9b36a7ef9c7f6aa0412f15ec8a81cd96128faec62917edbb14e",
+    "satori_ble_v1_1_management_vectors.json": "a8d2869740b370af3e003f086e0f076c1db16ef42ef95222f1bb543493d2ad8a",
+    "satori_ble_v1_2_shared_pairing_vectors.json": "29e0e4630dcbf503cb77b9c17689aa038673c0b916a456eec1b2e44a735bf9ed"
+  }
+}

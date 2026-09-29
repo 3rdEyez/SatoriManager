@@ -1,14 +1,20 @@
 name: satori_manager
-description: 觉瞳 Wi-Fi 控制技术验证版
+description: 觉瞳 BLE 控制技术验证版
 publish_to: none
-version: 0.1.0+1
+version: 0.2.2+4
 environment:
   sdk: ^3.12.2
 dependencies:
   flutter:
     sdk: flutter
+  bluez: 0.8.3
+  device_info_plus: ^12.2.0
   flutter_foreground_task: 11.0.3
+  flutter_reactive_ble: 5.6.0
+  permission_handler: ^12.0.1
+  shared_preferences: 2.5.5
 dev_dependencies:
+  crypto: ^3.0.7
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0

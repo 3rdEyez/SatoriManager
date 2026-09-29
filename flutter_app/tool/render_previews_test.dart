@@ -31,13 +31,17 @@ void main() {
     'endpoint': null,
     'discovered': <Map<String, Object>>[],
     'simulators': <Map<String, Object>>[],
-    'target': [1500, 1500, 1500],
+    'target': null,
+    'outputAuthorized': false,
     'simulator': false,
     'error': null,
   };
   final connected = <String, dynamic>{
     ...base,
     'connection': 'connected',
+    'outputAuthorized': true,
+    'target': [1500, 1500, 1500],
+    'deviceId': 'synthetic-preview',
     'simulator': true,
     'endpoint': {'host': '192.168.1.20', 'port': 8888},
     'battery': 77,

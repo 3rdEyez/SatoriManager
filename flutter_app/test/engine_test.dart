@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:satori_manager/core/control_engine.dart';
+import 'package:satori_manager/core/legacy_udp_engine.dart';
 import 'package:satori_manager/core/protocol.dart';
 import 'package:satori_manager/infrastructure/udp_transport.dart';
 

@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.example.satori_manager"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_reactive_ble 5.6.0's Android library requires API 37.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -23,6 +24,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // Direct APK distribution: compress native libraries in the download.
+    // Android extracts them at install time; installed size is not reduced.
+    packaging {
+        jniLibs.useLegacyPackaging = true
     }
 
     buildTypes {
