@@ -1,19 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'core/safety_limits.dart';
 import 'core/control_status.dart';
 import 'infrastructure/reactive_ble_link.dart' show requestBlePermissions;
 import 'joystick_pad.dart';
 import 'runtime/control_client.dart';
-
-const _background = Color(0xFF0B1020);
-const _surface = Color(0xFF171D30);
-const _surfaceRaised = Color(0xFF202840);
-const _accent = Color(0xFFB6A2FF);
-const _mint = Color(0xFF80DFC0);
-const _muted = Color(0xFFAAB4CE);
+import 'satori_palette.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,51 +35,57 @@ class SatoriApp extends StatelessWidget {
   const SatoriApp({super.key, this.previewClient, this.previewFontFamily});
   final ControlClient? previewClient;
   final String? previewFontFamily;
+
+  ThemeData _theme(SatoriPalette p, Brightness brightness) => ThemeData(
+    useMaterial3: true,
+    brightness: brightness,
+    fontFamily: previewFontFamily,
+    scaffoldBackgroundColor: p.background,
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: p.button,
+      brightness: brightness,
+      surface: p.background,
+      primary: p.button,
+      onSurface: p.ink,
+    ),
+    textTheme:
+        (brightness == Brightness.dark
+                ? ThemeData.dark().textTheme
+                : ThemeData.light().textTheme)
+            .apply(
+              bodyColor: p.ink,
+              displayColor: p.ink,
+              fontFamily: previewFontFamily,
+            ),
+    appBarTheme: AppBarTheme(
+      backgroundColor: p.background,
+      surfaceTintColor: Colors.transparent,
+    ),
+    sliderTheme: SliderThemeData(
+      trackHeight: 5,
+      activeTrackColor: p.purple,
+      inactiveTrackColor: p.line,
+      thumbColor: p.sliderThumb,
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) =>
+            states.contains(WidgetState.selected) ? Colors.white : p.muted,
+      ),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected) ? p.button : p.line,
+      ),
+      trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: '觉瞳',
+    title: '觉之瞳',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      fontFamily: previewFontFamily,
-      scaffoldBackgroundColor: _background,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _accent,
-        brightness: Brightness.dark,
-        surface: _surface,
-        primary: _accent,
-        secondary: _mint,
-      ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: _background,
-        surfaceTintColor: Colors.transparent,
-      ),
-      cardTheme: const CardThemeData(
-        color: _surface,
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(24)),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: _surfaceRaised,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 15,
-        ),
-      ),
-      navigationBarTheme: const NavigationBarThemeData(
-        backgroundColor: _surface,
-        indicatorColor: Color(0xFF393251),
-      ),
-    ),
+    themeMode: ThemeMode.system,
+    theme: _theme(SatoriPalette.light, Brightness.light),
+    darkTheme: _theme(SatoriPalette.dark, Brightness.dark),
     home: ControlShell(previewClient: previewClient),
   );
 }
@@ -99,27 +99,19 @@ class ControlShell extends StatefulWidget {
 
 class _ControlShellState extends State<ControlShell>
     with WidgetsBindingObserver {
-  late final client = widget.previewClient ?? ControlClient();
-  final minFields = List.generate(3, (_) => TextEditingController());
-  final maxFields = List.generate(3, (_) => TextEditingController());
+  late final ControlClient client = widget.previewClient ?? ControlClient();
+  SatoriPalette get p => SatoriPalette.of(context);
   final values = [0.5, 0.5, 0.5];
   int tab = 0;
   bool busy = false;
   bool resetStickOnRelease = true;
-  DateTime? _lastJoystickSend;
-  DateTime? _lastEyelidSend;
+  bool? autoView;
+  bool _automaticConnection = true;
+  String? _selectionPending;
   String? _joystickEndpoint;
   String? _localError;
-
-  void _showError(Object error) {
-    _localError = error.toString();
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('操作未完成，请查看设备诊断信息')));
-      setState(() {});
-    }
-  }
+  DateTime? _lastJoystickSend;
+  DateTime? _lastEyelidSend;
 
   @override
   void initState() {
@@ -127,32 +119,12 @@ class _ControlShellState extends State<ControlShell>
     WidgetsBinding.instance.addObserver(this);
     client.addListener(_refresh);
     _syncJoystickTarget();
-  }
-
-  void _refresh() {
-    if (mounted) {
-      _syncJoystickTarget();
-      setState(() {});
-    }
-  }
-
-  void _syncJoystickTarget() {
-    final state = client.state;
-    if (state['connection'] != 'connected' ||
-        state['outputAuthorized'] != true) {
-      _joystickEndpoint = null;
-      return;
-    }
-    final endpoint = state['deviceId'].toString();
-    if (_joystickEndpoint == endpoint) return;
-    _joystickEndpoint = endpoint;
-    final target = state['target'];
-    if (target is List && target.length == 3) {
-      for (var i = 0; i < 3; i++) {
-        if (target[i] is num) {
-          values[i] = ((target[i] as num) - 500) / 2000;
+    if (!client.preview) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && client.state['connection'] == 'disconnected') {
+          _discover();
         }
-      }
+      });
     }
   }
 
@@ -166,10 +138,44 @@ class _ControlShellState extends State<ControlShell>
     WidgetsBinding.instance.removeObserver(this);
     client.removeListener(_refresh);
     client.dispose();
-    for (final field in [...minFields, ...maxFields]) {
-      field.dispose();
-    }
     super.dispose();
+  }
+
+  void _refresh() {
+    if (!mounted) return;
+    _syncJoystickTarget();
+    setState(() {});
+    _tryAutoSelect();
+  }
+
+  void _syncJoystickTarget() {
+    final state = client.state;
+    if (state['connection'] != 'connected' ||
+        state['outputAuthorized'] != true) {
+      _joystickEndpoint = null;
+      return;
+    }
+    final endpoint = state['deviceId']?.toString();
+    if (_joystickEndpoint == endpoint) return;
+    _joystickEndpoint = endpoint;
+    final target = state['target'];
+    if (target is List && target.length == 3) {
+      for (var i = 0; i < 3; i++) {
+        if (target[i] is num) {
+          values[i] = (((target[i] as num) - 500) / 2000).clamp(0.0, 1.0);
+        }
+      }
+    }
+  }
+
+  void _showError(Object error) {
+    _localError = error.toString();
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_localError!)));
+      setState(() {});
+    }
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -183,21 +189,17 @@ class _ControlShellState extends State<ControlShell>
     } catch (error) {
       _showError(error);
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => busy = false);
+        _tryAutoSelect();
+      }
     }
-  }
-
-  SafetyLimits _limits() {
-    List<int> read(List<TextEditingController> fields) => [
-      for (final field in fields) int.parse(field.text.trim()),
-    ];
-    return SafetyLimits(read(minFields), read(maxFields));
   }
 
   Future<void> _discover() => _run(() async {
-    if (!Platform.isAndroid) {
-      throw StateError('手机界面目前只验证 Android；本机请使用 BLE 调试工具');
-    }
+    _automaticConnection = true;
+    _selectionPending = null;
+    if (!Platform.isAndroid) throw StateError('目前仅支持 Android 手机连接觉瞳');
     if (!await requestBlePermissions()) throw StateError('请允许蓝牙权限后重试');
     final permission =
         await FlutterForegroundTask.checkNotificationPermission();
@@ -209,33 +211,47 @@ class _ControlShellState extends State<ControlShell>
       }
     }
     await client.start();
+    if (client.state['connection'] == 'connected') return;
     await client.send('discover');
   });
 
-  Future<void> _select(Map device) => _run(() async {
-    await client.send('select', {'deviceId': device['id']});
-    final limits = client.state['safety'];
-    if (limits is Map) {
-      for (var i = 0; i < 3; i++) {
-        minFields[i].text = '${(limits['minimum'] as List)[i]}';
-        maxFields[i].text = '${(limits['maximum'] as List)[i]}';
+  void _tryAutoSelect() {
+    if (!_automaticConnection || busy || client.preview) return;
+    final state = client.state;
+    if (state['connection'] != 'searching') return;
+    final discovered = state['discovered'];
+    if (discovered is! List || discovered.isEmpty) return;
+    final device = discovered.first;
+    if (device is! Map || device['id'] is! String) return;
+    final id = device['id'] as String;
+    if (_selectionPending == id) return;
+    _selectionPending = id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _automaticConnection) {
+        _run(() => client.send('select', {'deviceId': id}));
       }
-    }
-    if (mounted) setState(() => tab = 0);
-  });
+    });
+  }
 
-  Future<void> _arm() => _run(() => client.send('arm'));
+  Future<void> _disconnect() async {
+    _automaticConnection = false;
+    try {
+      await client.send('disconnect');
+    } catch (error) {
+      _showError(error);
+    }
+  }
 
   Future<void> _pause() async {
     try {
       await client.send('stop');
-    } catch (e) {
-      _showError(e);
+    } catch (error) {
+      _showError(error);
     }
   }
 
   void _sendJoystick(double x, double y, {bool force = false}) {
-    if (busy) return;
+    if (busy || client.state['outputAuthorized'] != true) return;
     setState(() {
       values[0] = x;
       values[1] = y;
@@ -254,16 +270,8 @@ class _ControlShellState extends State<ControlShell>
         .catchError((Object error) => _showError(error));
   }
 
-  void _releaseJoystick() {
-    if (resetStickOnRelease) {
-      _sendJoystick(.5, .5, force: true);
-    } else {
-      _sendJoystick(values[0], values[1], force: true);
-    }
-  }
-
   void _sendEyelid(double value, {bool force = false}) {
-    if (busy) return;
+    if (busy || client.state['outputAuthorized'] != true) return;
     setState(() => values[2] = value);
     final now = DateTime.now();
     if (!force &&
@@ -279,365 +287,518 @@ class _ControlShellState extends State<ControlShell>
         .catchError((Object error) => _showError(error));
   }
 
-  Widget _sectionTitle(String title, {String? description}) => Column(
+  Future<void> _setAutoView(bool value) async {
+    if (value == (autoView ?? (client.state['mode'] == 'auto'))) return;
+    if (!value &&
+        (client.state['autoRotate'] == true ||
+            client.state['autoWink'] == true)) {
+      await _run(() async {
+        if (client.state['autoRotate'] == true) {
+          await client.send('rotate', {'enabled': false});
+        }
+        if (client.state['autoWink'] == true) {
+          await client.send('winkAuto', {'enabled': false});
+        }
+      });
+      if (client.state['autoRotate'] == true ||
+          client.state['autoWink'] == true) {
+        return;
+      }
+    }
+    if (mounted) setState(() => autoView = value);
+  }
+
+  Widget _page(List<Widget> children) => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 680),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(26, 4, 26, 24),
+        children: children,
+      ),
+    ),
+  );
+
+  Widget _divider() => Divider(height: 1, thickness: 1, color: p.line);
+
+  Widget _section(String title, {String? subtitle}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(
         title,
-        style: const TextStyle(
-          fontSize: 23,
+        style: TextStyle(
+          fontSize: 21,
           fontWeight: FontWeight.w700,
-          letterSpacing: -.4,
+          color: p.ink,
         ),
       ),
-      if (description != null) ...[
+      if (subtitle != null) ...[
         const SizedBox(height: 4),
-        Text(description, style: const TextStyle(color: _muted)),
+        Text(subtitle, style: TextStyle(color: p.muted, fontSize: 14)),
       ],
     ],
   );
 
-  Widget _panel(Widget child, {Color color = _surface}) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(24),
-    ),
-    child: child,
-  );
-
-  Widget _statusCard(Map<String, dynamic> state) {
+  Widget _statusChip(Map<String, dynamic> state) {
     final connection = state['connection'] as String? ?? 'disconnected';
-    final label = controlStatus(state);
-    final active = connection == 'connected';
     final battery = state['battery'];
+    final active = connection == 'connected';
     final batteryTime = DateTime.tryParse(state['batteryAt']?.toString() ?? '');
     final stale =
         batteryTime != null &&
         DateTime.now().difference(batteryTime) > const Duration(seconds: 60);
-    final deviceId = state['deviceId'];
-    return _panel(
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: active
-                      ? _mint.withValues(alpha: .14)
-                      : _accent.withValues(alpha: .14),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  active ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-                  color: active ? _mint : _accent,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (deviceId != null)
-                      const Text(
-                        '觉瞳',
-                        style: TextStyle(color: _muted, fontSize: 12),
-                      ),
-                  ],
+    return InkWell(
+      onTap: () => setState(() => tab = 2),
+      borderRadius: BorderRadius.circular(99),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: p.line),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.circle,
+              color: active
+                  ? p.success
+                  : connection == 'searching' || connection == 'connecting'
+                  ? p.purple
+                  : p.muted,
+              size: 8,
+            ),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                active ? '已连接 · 觉瞳 01' : controlStatus(state),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: p.ink,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              if (active) Icon(Icons.circle, color: _mint, size: 10),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _pill(
+            ),
+            if (active) ...[
+              const SizedBox(width: 8),
+              Container(width: 1, height: 16, color: p.line),
+              const SizedBox(width: 8),
+              Icon(
                 battery == null
-                    ? '电量未知'
-                    : '电量 $battery%${stale ? ' · 已过期' : ''}',
-                battery == null
-                    ? Icons.battery_unknown
-                    : Icons.battery_5_bar_rounded,
+                    ? Icons.battery_unknown_outlined
+                    : Icons.battery_full_rounded,
+                color: p.purple,
+                size: 16,
               ),
-              if (state['simulator'] == true)
-                _pill('模拟器', Icons.science_outlined),
+              const SizedBox(width: 3),
+              Tooltip(
+                message: stale ? '电量数据已超过 1 分钟' : '设备电量',
+                child: Text(
+                  battery == null ? '—' : '$battery%',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: p.ink,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _pill(String text, IconData icon) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-    decoration: BoxDecoration(
-      color: _surfaceRaised,
-      borderRadius: BorderRadius.circular(99),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 15, color: _accent),
-        const SizedBox(width: 5),
-        Text(text, style: const TextStyle(fontSize: 12)),
-      ],
+  Widget _header(String title, String subtitle, Map<String, dynamic> state) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 27,
+                      fontWeight: FontWeight.w800,
+                      color: p.ink,
+                      height: 1.08,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: p.muted, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _statusChip(state),
+          ],
+        ),
+      );
+
+  Widget _outlinedAction(
+    String label,
+    IconData icon,
+    VoidCallback? onPressed, {
+    bool danger = false,
+  }) => SizedBox(
+    height: 44,
+    child: OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: danger ? p.pink : p.purple,
+        backgroundColor: danger ? p.dangerBackground : p.purpleSoft,
+        side: BorderSide(color: danger ? p.pink : p.softBorder),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
+      ),
     ),
   );
 
   Widget _controlPage(Map<String, dynamic> state) {
     final connected = state['connection'] == 'connected';
     final armed = state['outputAuthorized'] == true;
-    final target = state['target'] as List?;
+    final automatic = autoView ?? (state['mode'] == 'auto');
     return _page([
-      _sectionTitle('控制'),
-      const SizedBox(height: 18),
-      _statusCard(state),
-      const SizedBox(height: 22),
-      if (!connected)
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '尚未连接觉瞳',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 7),
-              const SizedBox(height: 14),
-              FilledButton.icon(
-                onPressed: () => setState(() => tab = 2),
-                icon: const Icon(Icons.arrow_forward_rounded),
-                label: const Text('连接设备'),
-              ),
-            ],
+      _header('觉之瞳', '控制', state),
+      if (!connected || !armed) ...[
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: p.purpleSoft,
+            borderRadius: BorderRadius.circular(16),
           ),
-        ),
-      if (connected && !armed) ...[
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                controlStatus(state),
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-              if (state['controlPhase'] == 'paused' ||
-                  state['controlPhase'] == 'actionFailed' ||
-                  state['controlPhase'] == 'ready')
-                FilledButton.icon(
-                  onPressed: busy ? null : _arm,
-                  icon: const Icon(Icons.play_arrow),
-                  label: Text(
-                    state['controlPhase'] == 'ready' ? '启用控制' : '恢复控制',
-                  ),
-                ),
-              if (needsControlAttention(state))
-                TextButton(
-                  onPressed: () => setState(() => tab = 2),
-                  child: const Text('查看详情'),
-                ),
-            ],
-          ),
-        ),
-      ],
-      if (connected && armed && target != null) ...[
-        _sectionTitle('手动控制'),
-        const SizedBox(height: 12),
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('方向', style: TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
-              JoystickPad(
-                x: values[0],
-                y: values[1],
-                onChanged: (x, y) => _sendJoystick(x, y),
-                onReleased: _releaseJoystick,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton.icon(
-                    onPressed: busy
-                        ? null
-                        : () => _sendJoystick(.5, .5, force: true),
-                    icon: const Icon(Icons.center_focus_strong_rounded),
-                    label: const Text('复位方向'),
-                  ),
-                ],
-              ),
-              Material(
-                color: Colors.transparent,
-                child: SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('松手回中'),
-                  value: resetStickOnRelease,
-                  onChanged: (value) =>
-                      setState(() => resetStickOnRelease = value),
+              Expanded(
+                child: Text(
+                  connected
+                      ? controlStatus(state)
+                      : state['connection'] == 'searching'
+                      ? '正在寻找觉瞳设备'
+                      : state['connection'] == 'connecting'
+                      ? '正在连接觉瞳设备'
+                      : state['connection'] == 'failed'
+                      ? '连接失败，请在设置中重试'
+                      : '尚未连接觉瞳设备',
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
-              const Divider(height: 28),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      '眼皮',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-              Slider(
-                key: const ValueKey('eyelid-slider'),
-                value: values[2],
-                onChanged: busy ? null : _sendEyelid,
-                onChangeEnd: busy
+              TextButton(
+                onPressed: busy
                     ? null
-                    : (value) => _sendEyelid(value, force: true),
+                    : connected
+                    ? () => _run(() => client.send('arm'))
+                    : () => setState(() => tab = 2),
+                child: Text(connected ? '启用控制' : '查看连接'),
               ),
             ],
           ),
         ),
         const SizedBox(height: 18),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _pause,
-            icon: const Icon(Icons.stop_circle_outlined),
-            label: Text(state['controlPhase'] == 'pausing' ? '暂停中…' : '暂停控制'),
+      ],
+      Center(
+        child: Container(
+          height: 40,
+          width: 205,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: p.segment,
+            border: Border.all(color: p.line),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Row(
+            children: [
+              for (final option in [(true, '自动'), (false, '手动')])
+                Expanded(
+                  child: InkWell(
+                    onTap: connected && armed && !busy
+                        ? () => _setAutoView(option.$1)
+                        : null,
+                    borderRadius: BorderRadius.circular(99),
+                    child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: automatic == option.$1
+                            ? p.button
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        option.$2,
+                        style: TextStyle(
+                          color: automatic == option.$1
+                              ? Colors.white
+                              : p.muted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
-        const SizedBox(height: 22),
-        _sectionTitle('自动动作'),
+      ),
+      const SizedBox(height: 25),
+      if (!automatic) ...[
+        Center(child: _section('方向摇杆', subtitle: '拖动控制左右与上下')),
+        const SizedBox(height: 18),
+        IgnorePointer(
+          ignoring: !armed || busy,
+          child: Opacity(
+            opacity: armed ? 1 : .55,
+            child: JoystickPad(
+              x: values[0],
+              y: values[1],
+              onChanged: (x, y) => _sendJoystick(x, y),
+              onReleased: () => _sendJoystick(
+                resetStickOnRelease ? .5 : values[0],
+                resetStickOnRelease ? .5 : values[1],
+                force: true,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _divider(),
         const SizedBox(height: 12),
-        _panel(
-          Column(
-            children: [
-              _behaviorRow(
-                Icons.explore_rounded,
-                '自动转动',
-                state['autoRotate'] == true,
-                (value) =>
-                    _run(() => client.send('rotate', {'enabled': value})),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '松手回中',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    '松开摇杆后自动回到中心',
+                    style: TextStyle(color: p.muted, fontSize: 11),
+                  ),
+                ],
               ),
-              const Divider(height: 28),
-              _behaviorRow(
-                Icons.visibility_rounded,
-                '自动眨眼',
-                state['autoWink'] == true,
-                (value) =>
-                    _run(() => client.send('winkAuto', {'enabled': value})),
+            ),
+            Switch(
+              value: resetStickOnRelease,
+              onChanged: (value) => setState(() => resetStickOnRelease = value),
+            ),
+            const SizedBox(width: 8),
+            _outlinedAction(
+              '方向回中',
+              Icons.center_focus_strong_rounded,
+              armed && !busy ? () => _sendJoystick(.5, .5, force: true) : null,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _divider(),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '眼皮开合',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
-            ],
+            ),
+            Text(
+              '${(values[2] * 100).round()}%',
+              style: TextStyle(
+                color: p.purple,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        Slider(
+          key: const ValueKey('eyelid-slider'),
+          value: values[2],
+          onChanged: armed && !busy ? _sendEyelid : null,
+          onChangeEnd: armed && !busy
+              ? (value) => _sendEyelid(value, force: true)
+              : null,
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('闭合', style: TextStyle(color: p.muted, fontSize: 12)),
+            Text('张开', style: TextStyle(color: p.muted, fontSize: 12)),
+          ],
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: _outlinedAction(
+            '眨眼',
+            Icons.motion_photos_on_rounded,
+            armed && !busy && state['playback'] != 'playing'
+                ? () => _run(() => client.send('play', {'name': 'wink'}))
+                : null,
+          ),
+        ),
+      ] else ...[
+        _section('自动控制', subtitle: '选择设备持续执行的动作'),
+        const SizedBox(height: 20),
+        _autoRow(
+          '自动转动',
+          '间隔改变方向',
+          Icons.refresh_rounded,
+          state['autoRotate'] == true,
+          armed
+              ? (value) => _run(() => client.send('rotate', {'enabled': value}))
+              : null,
+        ),
+        _divider(),
+        _autoRow(
+          '自动眨眼',
+          '间隔播放眨眼动作',
+          Icons.motion_photos_on_rounded,
+          state['autoWink'] == true,
+          armed
+              ? (value) =>
+                    _run(() => client.send('winkAuto', {'enabled': value}))
+              : null,
+        ),
+        const SizedBox(height: 20),
+        Text('持续行为由本地控制会话调度。', style: TextStyle(color: p.muted, fontSize: 12)),
+      ],
+      if (connected && armed) ...[
+        const SizedBox(height: 24),
+        Center(
+          child: TextButton.icon(
+            onPressed: _pause,
+            icon: const Icon(Icons.pause_circle_outline),
+            label: const Text('暂停控制'),
           ),
         ),
       ],
     ]);
   }
 
-  Widget _behaviorRow(
-    IconData icon,
+  Widget _autoRow(
     String title,
-    bool enabled,
-    ValueChanged<bool> onChanged,
-  ) => Row(
-    children: [
-      Icon(icon, color: _accent),
-      const SizedBox(width: 13),
-      Expanded(
-        child: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+    String subtitle,
+    IconData icon,
+    bool value,
+    ValueChanged<bool>? onChanged,
+  ) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 18),
+    child: Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: p.purpleSoft,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: p.purple),
         ),
-      ),
-      Switch(value: enabled, onChanged: busy ? null : onChanged),
-    ],
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              Text(subtitle, style: TextStyle(color: p.muted, fontSize: 12)),
+            ],
+          ),
+        ),
+        Switch(value: value, onChanged: busy ? null : onChanged),
+      ],
+    ),
   );
 
   Widget _actionsPage(Map<String, dynamic> state) {
-    final connected =
+    final ready =
         state['connection'] == 'connected' && state['outputAuthorized'] == true;
     final playing = state['playback'] == 'playing';
     return _page([
-      _sectionTitle('动作'),
+      _header('动作', '选择并播放预设', state),
+      _divider(),
+      const SizedBox(height: 20),
+      _section('预设动作', subtitle: '当前可用的动作'),
       const SizedBox(height: 18),
-      _statusCard(state),
-      const SizedBox(height: 22),
       for (final entry in [
-        ('wink', '轻眨一下', Icons.visibility_outlined),
-        ('wink2', '连眨两下', Icons.auto_awesome_rounded),
+        ('wink', '轻眨一下', '闭合 → 睁开'),
+        ('wink2', '连眨两下', '闭合 → 睁开 × 2'),
       ]) ...[
-        _panel(
-          Row(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Row(
             children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: _accent.withValues(alpha: .13),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(entry.$3, color: _accent),
-              ),
-              const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  entry.$2,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.$2,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      entry.$3,
+                      style: TextStyle(color: p.muted, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: ready && !busy && !playing
+                    ? () => _run(() => client.send('play', {'name': entry.$1}))
+                    : null,
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text('播放'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: p.button,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(100, 42),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(99),
                   ),
                 ),
               ),
-              IconButton.filledTonal(
-                tooltip: '播放${entry.$2}',
-                icon: const Icon(Icons.play_arrow_rounded),
-                onPressed: connected && !busy && !playing
-                    ? () => _run(() => client.send('play', {'name': entry.$1}))
-                    : null,
-              ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        _divider(),
       ],
-      if (playing)
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '动作播放中',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _pause,
-                icon: const Icon(Icons.stop_rounded),
-                label: const Text('取消播放'),
-              ),
-            ],
-          ),
+      const SizedBox(height: 28),
+      Text(
+        playing
+            ? '动作播放中'
+            : ready
+            ? '当前未播放动作'
+            : '连接并启用控制后可播放动作',
+        style: TextStyle(
+          color: p.muted,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
         ),
-      if (!connected)
-        const Text('连接设备后可播放动作。', style: TextStyle(color: _muted)),
+      ),
+      const SizedBox(height: 4),
+      Text('播放状态来自本地调度', style: TextStyle(color: p.muted, fontSize: 12)),
+      if (playing) ...[
+        const SizedBox(height: 14),
+        _outlinedAction('取消播放', Icons.stop_rounded, _pause),
+      ],
     ]);
   }
 
@@ -675,11 +836,6 @@ class _ControlShellState extends State<ControlShell>
     }
   }
 
-  String _addressSuffix(Object? address) {
-    final value = address?.toString() ?? '';
-    return value.length > 5 ? value.substring(value.length - 5) : value;
-  }
-
   void _showPairingHelp() {
     showDialog<void>(
       context: context,
@@ -698,308 +854,147 @@ class _ControlShellState extends State<ControlShell>
     );
   }
 
-  Widget _devicePage(Map<String, dynamic> state) {
+  Widget _settingRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 20),
+    child: Row(
+      children: [
+        Text(label, style: TextStyle(color: p.muted, fontSize: 15)),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _settingsPage(Map<String, dynamic> state) {
     final connected = state['connection'] == 'connected';
-    final active =
-        connected ||
+    final searching =
+        state['connection'] == 'searching' ||
         state['connection'] == 'connecting' ||
         state['connection'] == 'reconnecting';
-    final armed = state['outputAuthorized'] == true;
-    final discovered = (state['discovered'] as List? ?? []).cast<Map>();
     return _page([
-      _sectionTitle('设备'),
-      const SizedBox(height: 18),
-      _statusCard(state),
-      const SizedBox(height: 18),
-      if (active)
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('觉瞳', style: TextStyle(fontWeight: FontWeight.w700)),
-              Text(controlStatus(state), style: const TextStyle(color: _muted)),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  try {
-                    await client.send('disconnect');
-                  } catch (e) {
-                    _showError(e);
-                  }
-                },
-                icon: const Icon(Icons.link_off),
-                label: const Text('断开连接'),
-              ),
-            ],
+      _header('设置', '连接与设备', state),
+      const SizedBox(height: 12),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: p.purpleSoft,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Text(
+          '当前控制会话',
+          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+        ),
+      ),
+      _settingRow('连接方式', '蓝牙 · BLE'),
+      _divider(),
+      _settingRow(
+        '当前设备',
+        connected
+            ? '觉瞳 01'
+            : searching
+            ? '正在连接…'
+            : '未连接',
+      ),
+      _divider(),
+      if (connected) ...[
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: _outlinedAction(
+            '断开控制会话',
+            Icons.link_off_rounded,
+            busy ? null : _disconnect,
+            danger: true,
           ),
         ),
-      if (!active)
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '添加觉瞳',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
-              ),
-              const SizedBox(height: 8),
-              const Text('连接后会启用舵机。', style: TextStyle(color: _muted)),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: busy || state['connection'] == 'searching'
-                    ? null
-                    : _discover,
-                icon: const Icon(Icons.bluetooth_searching),
-                label: Text(
-                  state['connection'] == 'searching' ? '正在搜索…' : '搜索附近觉瞳',
-                ),
-              ),
-              TextButton(
-                onPressed: () => _showPairingHelp(),
-                child: const Text('配对帮助'),
-              ),
-            ],
+      ] else ...[
+        const SizedBox(height: 16),
+        Text(
+          searching ? '正在自动发现并连接觉瞳设备…' : '未发现设备，请确认设备已开启且手机蓝牙可用。',
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: _outlinedAction(
+            '重新搜索',
+            Icons.bluetooth_searching,
+            busy || searching ? null : _discover,
           ),
         ),
-      if (!active && client.running)
-        TextButton.icon(
-          onPressed: () async {
-            try {
-              await client.send('disconnect');
-            } catch (e) {
-              _showError(e);
-            }
-          },
-          icon: const Icon(Icons.bluetooth_disabled),
-          label: const Text('断开连接'),
-        ),
-      if (!active) ...[
-        const SizedBox(height: 20),
-        _sectionTitle('发现结果'),
-        const SizedBox(height: 10),
-        if (discovered.isEmpty)
-          _panel(
-            const Text('尚无结果；请打开蓝牙并让设备保持可发现。', style: TextStyle(color: _muted)),
-          ),
-        for (final device in discovered) ...[
-          _panel(
-            Row(
-              children: [
-                const Icon(Icons.bluetooth, color: _accent),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${device['name'] ?? '觉瞳'}',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      Text(
-                        '设备尾号 ${_addressSuffix(device['id'])}',
-                        style: const TextStyle(color: _muted, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: busy ? null : () => _select(device),
-                  child: const Text('连接'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
+        TextButton(onPressed: _showPairingHelp, child: const Text('配对帮助')),
       ],
       if (state['pairingNotice'] is String) ...[
-        const SizedBox(height: 16),
-        _panel(Text(state['pairingNotice'] as String)),
+        const SizedBox(height: 12),
+        Text(
+          state['pairingNotice'] as String,
+          style: TextStyle(color: p.muted),
+        ),
       ],
       if (connected) ...[
-        const SizedBox(height: 20),
-        _sectionTitle('配对与手机'),
-        const SizedBox(height: 12),
-        _panel(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                state['supportsSharedPairing'] == true
-                    ? '最多保存 8 台手机，同一时间只能连接 1 台。'
-                    : state['supportsOwnerManagement'] == true
-                    ? '当前固件仅支持单手机绑定，更换手机需要开启换绑窗口。升级设备固件后可多手机轮流使用。'
-                    : '此固件不支持在手机上管理配对，请先升级设备固件。',
-                style: const TextStyle(color: _muted),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: busy || state['supportsOwnerManagement'] != true
-                        ? null
-                        : _changePairingCode,
-                    icon: const Icon(Icons.key),
-                    label: const Text('修改配对码'),
-                  ),
-                  if (state['supportsSharedPairing'] != true)
-                    OutlinedButton.icon(
-                      onPressed:
-                          busy || state['supportsOwnerManagement'] != true
-                          ? null
-                          : _openTransfer,
-                      icon: const Icon(Icons.phonelink_setup),
-                      label: const Text('更换手机'),
-                    ),
-                  if (state['supportsSharedPairing'] != true)
-                    TextButton(
-                      onPressed:
-                          busy || state['supportsOwnerManagement'] != true
-                          ? null
-                          : () => _run(() => client.send('cancelTransfer')),
-                      child: const Text('取消换绑窗口'),
-                    ),
-                ],
-              ),
-            ],
-          ),
+        const SizedBox(height: 28),
+        _section('配对与手机'),
+        const SizedBox(height: 10),
+        Text(
+          state['supportsSharedPairing'] == true
+              ? '最多保存 8 台手机，同一时间只能连接 1 台。'
+              : state['supportsOwnerManagement'] == true
+              ? '当前固件仅支持单手机绑定，更换手机需要开启换绑窗口。'
+              : '此固件不支持在手机上管理配对。',
+          style: TextStyle(color: p.muted, fontSize: 13),
         ),
-      ],
-      if (active) ...[
-        const SizedBox(height: 16),
-        ExpansionTile(
-          title: const Text('设备详情'),
-          childrenPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 8,
-          ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('固件版本：${state['firmware'] ?? '未知'}'),
+            _outlinedAction(
+              '修改配对码',
+              Icons.key_rounded,
+              busy || state['supportsOwnerManagement'] != true
+                  ? null
+                  : _changePairingCode,
             ),
+            if (state['supportsSharedPairing'] != true)
+              _outlinedAction(
+                '更换手机',
+                Icons.phonelink_setup_rounded,
+                busy || state['supportsOwnerManagement'] != true
+                    ? null
+                    : _openTransfer,
+              ),
+            if (state['supportsSharedPairing'] != true)
+              TextButton(
+                onPressed: busy || state['supportsOwnerManagement'] != true
+                    ? null
+                    : () => _run(() => client.send('cancelTransfer')),
+                child: const Text('取消换绑窗口'),
+              ),
           ],
         ),
       ],
-      ExpansionTile(
-        title: const Text('诊断信息'),
-        childrenPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 8,
-        ),
-        children: [
-          if (active) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('设备地址：${state['deviceId'] ?? '未知'}'),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('身份：${state['identity'] ?? '等待认证'}'),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('会话：${state['sessionPhase'] ?? '等待连接'}'),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('最近业务确认：${state['lastAckSequence'] ?? '未知'}'),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('已执行序号：${state['lastAppliedSequence'] ?? '未知'}'),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '已下发逻辑值（控制目标）：${state['validChannelMask'] == 7 ? state['lastCommanded'] : '未知'}',
-              ),
-            ),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text('实际机械位置：未知'),
-            ),
-          ],
-          for (final device in discovered)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '${device['name'] ?? '觉瞳'}：${device['id'] ?? '未知'} · ${device['rssi'] ?? '未知'} dBm',
-              ),
-            ),
-          if (state['error'] != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('设备错误：${state['error']}'),
-            ),
-          if (client.message != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('后台错误：${client.message}'),
-            ),
-          if (_localError != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('界面错误：$_localError'),
-            ),
-        ],
-      ),
       const SizedBox(height: 20),
       ExpansionTile(
-        title: const Text('高级维护'),
+        tilePadding: EdgeInsets.zero,
+        title: Text('设备详情', style: TextStyle(color: p.ink)),
         children: [
-          const Text('自定义逻辑范围（可选，暂停后修改）', style: TextStyle(color: _muted)),
-          _panel(
-            Column(
-              children: [
-                for (var i = 0; i < 3; i++) ...[
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(['CH1 · 左右', 'CH2 · 上下', 'CH3 · 眼皮'][i]),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      for (final field in [
-                        (minFields[i], '最小'),
-                        (maxFields[i], '最大'),
-                      ])
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: TextField(
-                              controller: field.$1,
-                              enabled: !armed,
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                labelText: field.$2,
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                const Text(
-                  '默认逻辑范围沿用原客户端输入映射；实际机械限位由设备标定约束。这里仅供维护时覆盖。',
-                  style: TextStyle(color: _muted, fontSize: 12),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: busy || armed || !connected
-                      ? null
-                      : () => _run(
-                          () => client.send('configureSafety', {
-                            'limits': _limits().toJson(),
-                          }),
-                        ),
-                  child: const Text('保存自定义范围'),
-                ),
-              ],
+          _settingRow('固件版本', '${state['firmware'] ?? '未知'}'),
+          _settingRow('控制状态', controlStatus(state)),
+          if (state['error'] != null) _settingRow('设备错误', '${state['error']}'),
+          if (client.message != null) _settingRow('后台错误', client.message!),
+          if (_localError != null) _settingRow('界面错误', _localError!),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '设备实际姿态未回传',
+              style: TextStyle(color: p.muted, fontSize: 12),
             ),
           ),
         ],
@@ -1007,12 +1002,58 @@ class _ControlShellState extends State<ControlShell>
     ]);
   }
 
-  Widget _page(List<Widget> children) => Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 680),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-        children: children,
+  Widget _bottomNav() => Container(
+    decoration: BoxDecoration(
+      color: p.background,
+      border: Border(top: BorderSide(color: p.line)),
+    ),
+    child: SafeArea(
+      top: false,
+      child: SizedBox(
+        height: 64,
+        child: Row(
+          children: [
+            for (final item in [
+              (0, '控制', Icons.tune_rounded),
+              (1, '动作', Icons.play_arrow_rounded),
+              (2, '设置', Icons.settings_outlined),
+            ])
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => tab = item.$1),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 35,
+                        height: 35,
+                        decoration: BoxDecoration(
+                          color: tab == item.$1 ? p.button : Colors.transparent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          item.$3,
+                          color: tab == item.$1 ? Colors.white : p.muted,
+                          size: 23,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        item.$2,
+                        style: TextStyle(
+                          color: tab == item.$1 ? p.purple : p.muted,
+                          fontSize: 12,
+                          fontWeight: tab == item.$1
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     ),
   );
@@ -1021,74 +1062,34 @@ class _ControlShellState extends State<ControlShell>
   Widget build(BuildContext context) {
     final state = client.state;
     return Scaffold(
-      appBar: AppBar(
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        child: Column(
           children: [
-            Text(
-              '觉瞳',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
-            ),
-            Text('测试版', style: TextStyle(fontSize: 11, color: _muted)),
-          ],
-        ),
-        actions: [
-          if (state['connection'] == 'connected')
-            IconButton(
-              tooltip: '暂停控制',
-              icon: const Icon(Icons.stop_circle_outlined),
-              onPressed: _pause,
-            ),
-          IconButton(
-            tooltip: '刷新状态',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => client.restore(),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (needsControlAttention(state) ||
-              (state['connection'] == 'failed') ||
-              client.message != null ||
-              _localError != null)
-            Container(
-              width: double.infinity,
-              color: const Color(0xFF543037),
-              padding: const EdgeInsets.all(10),
-              child: Text(
-                needsControlAttention(state)
-                    ? controlStatus(state)
-                    : state['connection'] == 'failed'
-                    ? '连接失败，请查看诊断信息'
-                    : '操作未完成，请查看设备诊断信息',
-                textAlign: TextAlign.center,
+            if (needsControlAttention(state) || state['connection'] == 'failed')
+              Container(
+                width: double.infinity,
+                color: p.warningBackground,
+                padding: const EdgeInsets.all(9),
+                child: Text(
+                  controlStatus(state),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: p.pink),
+                ),
+              ),
+            Expanded(
+              child: IndexedStack(
+                index: tab,
+                children: [
+                  _controlPage(state),
+                  _actionsPage(state),
+                  _settingsPage(state),
+                ],
               ),
             ),
-          Expanded(
-            child: IndexedStack(
-              index: tab,
-              children: [
-                _controlPage(state),
-                _actionsPage(state),
-                _devicePage(state),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: (index) => setState(() => tab = index),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.tune_rounded), label: '控制'),
-          NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            label: '动作',
-          ),
-          NavigationDestination(icon: Icon(Icons.devices_rounded), label: '设备'),
-        ],
-      ),
+      bottomNavigationBar: _bottomNav(),
     );
   }
 }

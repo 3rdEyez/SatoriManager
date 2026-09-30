@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'satori_palette.dart';
 
 /// CH1 runs left to right, and CH2 runs top to bottom.
 class JoystickPad extends StatelessWidget {
@@ -29,6 +30,7 @@ class JoystickPad extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
+      final palette = SatoriPalette.of(context);
       final diameter = math.min(constraints.maxWidth, 232.0);
       final size = Size.square(diameter);
       void update(Offset local) {
@@ -53,22 +55,22 @@ class JoystickPad extends StatelessWidget {
                   Container(
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: const Color(0xFF242E48),
+                      color: palette.joystickSurface,
                       border: Border.all(
-                        color: const Color(0xFF5B6086),
-                        width: 2,
+                        color: palette.joystickBorder,
+                        width: 1.5,
                       ),
                     ),
                   ),
                   Container(
                     width: 1,
-                    height: diameter - 28,
-                    color: const Color(0xFF454F6B),
+                    height: diameter - 12,
+                    color: palette.joystickLine,
                   ),
                   Container(
-                    width: diameter - 28,
+                    width: diameter - 12,
                     height: 1,
-                    color: const Color(0xFF454F6B),
+                    color: palette.joystickLine,
                   ),
                   Positioned(
                     left: (diameter - 48) * x.clamp(0.0, 1.0),
@@ -79,17 +81,18 @@ class JoystickPad extends StatelessWidget {
                         height: 48,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0xFFB6A2FF),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [palette.knobStart, palette.knobEnd],
+                          ),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0x66B6A2FF),
-                              blurRadius: 18,
+                              color: palette.knobShadow,
+                              blurRadius: 15,
+                              offset: Offset(0, 6),
                             ),
                           ],
-                        ),
-                        child: const Icon(
-                          Icons.control_camera_rounded,
-                          color: Color(0xFF1B1730),
                         ),
                       ),
                     ),

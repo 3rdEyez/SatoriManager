@@ -26,7 +26,7 @@ Future<void> devicePage(
   PairingPreviewClient client,
 ) async {
   await tester.pumpWidget(SatoriApp(previewClient: client));
-  await tester.tap(find.byIcon(Icons.devices_rounded));
+  await tester.tap(find.text('设置'));
   await tester.pumpAndSettle();
 }
 
@@ -111,18 +111,13 @@ void main() {
     expect(find.text('取消换绑窗口'), findsNothing);
     expect(client.sent, isEmpty);
   });
-  testWidgets(
-    'default setup requires no range form and maintenance is collapsed',
-    (tester) async {
-      final client = PairingPreviewClient(connected: false);
-      await devicePage(tester, client);
-      expect(find.textContaining('默认参数已内置'), findsNothing);
-      expect(find.byType(TextField), findsNothing);
-      await tester.scrollUntilVisible(find.text('高级维护'), 200);
-      expect(find.text('保存自定义范围'), findsNothing);
-      await tester.tap(find.text('高级维护'));
-      await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsNWidgets(6));
-    },
-  );
+  testWidgets('firmware limits have no editable UI', (tester) async {
+    final client = PairingPreviewClient(connected: false);
+    await devicePage(tester, client);
+    expect(find.text('连接方式'), findsOneWidget);
+    expect(find.text('蓝牙 · BLE'), findsOneWidget);
+    expect(find.textContaining('安全范围'), findsNothing);
+    expect(find.text('高级维护'), findsNothing);
+    expect(find.byType(TextField), findsNothing);
+  });
 }
