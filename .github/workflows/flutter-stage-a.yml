@@ -1,0 +1,28 @@
+name: Flutter Stage A
+on:
+  push:
+    paths: ["flutter_app/**", ".github/workflows/flutter-stage-a.yml"]
+  pull_request:
+    paths: ["flutter_app/**", ".github/workflows/flutter-stage-a.yml"]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test tool
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --debug
