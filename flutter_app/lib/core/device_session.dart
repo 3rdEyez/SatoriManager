@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'ble_protocol.dart';
+import 'ble_compatibility.dart';
 
 enum BleLinkState { disconnected, connecting, connected }
 
@@ -187,10 +188,9 @@ class DeviceSession {
         await _setupRead(BleProtocol.deviceInfoUuid),
       );
       _checkGeneration(generation);
-      if (info.protocolMajor != 1 || !info.supportsRequiredCapabilities) {
-        throw StateError(
-          'Incompatible BLE protocol or missing required capabilities',
-        );
+      final mismatch = BleCompatibility.incompatibility(info);
+      if (mismatch != null) {
+        throw BleVersionMismatch(info, mismatch);
       }
       // The plugin exposes no CCCD-ready future. The protected read triggers
       // pairing, then identity is re-read through the authenticated link.

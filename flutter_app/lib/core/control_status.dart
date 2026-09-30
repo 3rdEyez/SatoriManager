@@ -25,6 +25,7 @@ String controlStatus(Map state) {
     case 'searching':
       return '正在搜索…';
     case 'failed':
+      if (state['issueCode'] == 'versionMismatch') return '版本不兼容';
       return '连接失败';
     default:
       return '未连接';

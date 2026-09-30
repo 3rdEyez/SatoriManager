@@ -204,9 +204,10 @@ class FakeBleLink implements BleLink {
     if (uuid == BleProtocol.identityUuid) return List<int>.from(identity);
     if (uuid == BleProtocol.deviceInfoUuid) {
       return BleProtocol.encodeDeviceInfo(
-        protocolMinor: sharedPairingSupported
-            ? 2
-            : (ownerManagementSupported ? 1 : 0),
+        protocolMinor: 2,
+        firmwareMajor: 0,
+        firmwareMinor: 2,
+        firmwarePatch: 2,
         capabilities:
             (ownerManagementSupported ? 0xdf : 0x5f) |
             (sharedPairingSupported ? 0x100 : 0),

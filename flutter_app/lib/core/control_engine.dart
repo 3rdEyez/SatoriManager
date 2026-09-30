@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'ble_protocol.dart' show BleResult;
+import 'ble_compatibility.dart';
 import 'device_session.dart';
 import 'protocol.dart' show ActionFrame, Protocol;
 import 'safety_limits.dart';
@@ -40,6 +41,8 @@ class ControlEngine {
   bool outputAuthorized = false;
   String? error;
   String? issueCode;
+  String? incompatibleFirmware;
+  String? incompatibleProtocol;
   bool pauseInProgress = false;
   bool explicitlyPaused = false;
   String? deviceId;
@@ -70,7 +73,10 @@ class ControlEngine {
       'sessionPhase': s.phase.name,
       'deviceId': deviceId,
       'identity': s.identity,
-      'firmware': s.deviceInfo?.firmwareVersion,
+      'firmware': s.deviceInfo?.firmwareVersion ?? incompatibleFirmware,
+      'deviceProtocol': s.deviceInfo?.protocolVersion ?? incompatibleProtocol,
+      'appVersion': BleCompatibility.appVersion,
+      'appProtocol': BleCompatibility.protocolVersion,
       'supportsOwnerManagement':
           ((s.deviceInfo?.capabilities ?? 0) & 0x80) != 0,
       'supportsSharedPairing': s.deviceInfo?.supportsSharedPairing ?? false,
@@ -164,6 +170,8 @@ class ControlEngine {
     connection = 'connecting';
     error = null;
     issueCode = null;
+    incompatibleFirmware = null;
+    incompatibleProtocol = null;
     _connecting = true;
     _notify();
     try {
@@ -186,6 +194,11 @@ class ControlEngine {
       if (generation == _connectionGeneration) {
         connection = 'failed';
         error = '$e';
+        if (e is BleVersionMismatch) {
+          issueCode = 'versionMismatch';
+          incompatibleFirmware = e.deviceInfo.firmwareVersion;
+          incompatibleProtocol = e.deviceInfo.protocolVersion;
+        }
         await session.disconnect();
       }
       rethrow;

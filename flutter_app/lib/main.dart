@@ -985,7 +985,10 @@ class _ControlShellState extends State<ControlShell>
         tilePadding: EdgeInsets.zero,
         title: Text('设备详情', style: TextStyle(color: p.ink)),
         children: [
+          _settingRow('应用版本', '${state['appVersion'] ?? '未知'}'),
           _settingRow('固件版本', '${state['firmware'] ?? '未知'}'),
+          _settingRow('应用 BLE 协议', '${state['appProtocol'] ?? '未知'}'),
+          _settingRow('设备 BLE 协议', '${state['deviceProtocol'] ?? '未知'}'),
           _settingRow('控制状态', controlStatus(state)),
           if (state['error'] != null) _settingRow('设备错误', '${state['error']}'),
           if (client.message != null) _settingRow('后台错误', client.message!),

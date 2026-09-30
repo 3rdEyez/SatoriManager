@@ -444,6 +444,7 @@ class BleDeviceInfo {
       securityPolicy,
       logicalChannels;
   String get firmwareVersion => '$firmwareMajor.$firmwareMinor.$firmwarePatch';
+  String get protocolVersion => '$protocolMajor.$protocolMinor';
   bool get supportsRequiredCapabilities => (capabilities & 0x5f) == 0x5f;
   bool get supportsOwnerManagement => (capabilities & 0x80) != 0;
   bool get supportsSharedPairing =>
