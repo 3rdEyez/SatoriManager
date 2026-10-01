@@ -1,5 +1,7 @@
 # SatoriManager 项目
 
+Flutter/Android 重构与三页界面位于 [flutter_app](flutter_app/README.md)。旧 Qt 工程仍保留；Flutter 版的真实设备与锁屏运行尚待验收。
+
 ## 项目简介
 SatoriManager 是一个基于 Qt 和 QML 的小型机器人控制项目，用户可以通过移动端远程操控机器人。项目支持模式切换（如自动模式、睡眠模式、人脸识别等）以及机器人头部的旋转和眨眼控制，包含移动端控制客户端和机器人服务器端的通信功能。
 
