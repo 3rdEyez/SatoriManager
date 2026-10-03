@@ -1004,6 +1004,95 @@ class _ControlShellState extends State<ControlShell>
         ),
       ],
       const SizedBox(height: 20),
+      _section('固件升级'),
+      const SizedBox(height: 10),
+      Text(
+        state['otaSupported'] != true
+            ? (connected ? '当前固件不支持无线升级窗口。' : '未连接，窗口状态未确认。')
+            : state['otaWindow']?['result'] == 2
+            ? '签名升级尚未就绪，暂不能开启窗口。'
+            : '主动开启限时窗口后，手动连接设备 Wi-Fi，用任意浏览器上传 .sota 签名包。',
+        style: TextStyle(color: p.muted, fontSize: 13),
+      ),
+      if (state['otaNotice'] is String) ...[
+        const SizedBox(height: 8),
+        Text(state['otaNotice'] as String, style: TextStyle(color: p.muted)),
+      ],
+      if (state['otaSupported'] == true) ...[
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _outlinedAction(
+              '开启升级窗口',
+              Icons.system_update,
+              busy ||
+                      state['otaBusy'] == true ||
+                      state['otaWindow'] == null ||
+                      state['otaWindow']?['result'] == 2 ||
+                      (state['otaWindow']?['state'] ?? 0) != 0
+                  ? null
+                  : () => _run(() async {
+                      _automaticConnection = false;
+                      await client.send('openOtaWindow');
+                    }),
+            ),
+            _outlinedAction(
+              '关闭升级窗口',
+              Icons.close,
+              busy ||
+                      state['otaBusy'] == true ||
+                      state['otaWindow'] == null ||
+                      (state['otaWindow']?['windowId'] ?? 0) == 0 ||
+                      state['otaWindow']?['state'] == 5
+                  ? null
+                  : () => _run(() => client.send('closeOtaWindow')),
+            ),
+            if (state['otaMaintenance'] == true)
+              _outlinedAction(
+                '退出升级并重新连接',
+                Icons.bluetooth,
+                busy ||
+                        state['otaBusy'] == true ||
+                        state['otaWindow']?['state'] != 0
+                    ? null
+                    : () => _run(() => client.send('exitOtaMaintenance')),
+              ),
+          ],
+        ),
+      ],
+      if (!connected && state['otaMaintenance'] == true) ...[
+        const SizedBox(height: 12),
+        _outlinedAction(
+          '重新连接确认窗口状态',
+          Icons.bluetooth_searching,
+          busy
+              ? null
+              : () => _run(() => client.send('reconnectOtaMaintenance')),
+        ),
+        Text(
+          '蓝牙断开不能证明窗口已关闭；重新连接只确认状态，不自动启用动作。',
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+      ],
+      if (state['otaWindow'] != null &&
+          (state['otaWindow']['state'] == 2 ||
+              state['otaWindow']['state'] == 3)) ...[
+        const SizedBox(height: 12),
+        _settingRow('升级 Wi-Fi', '${state['otaWindow']['ssid']}'),
+        _settingRow('临时密码', '${state['otaWindow']['password']}'),
+        _settingRow('浏览器地址', 'http://192.168.4.1/'),
+        _settingRow(
+          '设备剩余时间',
+          '${((state['otaWindow']['remainingMs'] as num) / 1000).ceil()} 秒',
+        ),
+        Text(
+          '1. 手动连接以上 Wi-Fi（无互联网）。\n2. 浏览器打开以上地址，选择签名升级包。\n3. 等待设备报告结果；上传不需要保持蓝牙。\n关闭窗口不会恢复动作，退出后需手动启用控制。',
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+      ],
+      const SizedBox(height: 20),
       ExpansionTile(
         tilePadding: EdgeInsets.zero,
         title: Text('设备详情', style: TextStyle(color: p.ink)),

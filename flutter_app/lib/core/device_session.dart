@@ -3,6 +3,7 @@ import 'dart:async';
 import 'ble_protocol.dart';
 import 'ble_compatibility.dart';
 import 'ble_diagnostics.dart';
+import 'ota_window.dart';
 
 enum BleLinkState { disconnected, connecting, connected }
 
@@ -23,6 +24,7 @@ enum DeviceSessionPhase {
   reading,
   claiming,
   readyPaused,
+  maintenance,
   armed,
   error,
 }
@@ -53,7 +55,8 @@ class DeviceSessionSnapshot {
   final DateTime? diagnosticsAt;
   bool get isConnected =>
       phase == DeviceSessionPhase.readyPaused ||
-      phase == DeviceSessionPhase.armed;
+      phase == DeviceSessionPhase.armed ||
+      phase == DeviceSessionPhase.maintenance;
   bool get isArmed => phase == DeviceSessionPhase.armed;
   bool get targetKnown => isArmed && (state?.targetKnown ?? false);
 }
@@ -138,6 +141,119 @@ class DeviceSession {
   bool _diagnosticReadInProgress = false;
   bool _stateReadInProgress = false;
   bool _releaseInProgress = false;
+  bool maintenanceMode = false;
+  bool? otaSupported;
+  OtaWindowStatus? otaWindow;
+  Timer? _otaRefresh;
+  int? _otaReadGeneration;
+  int _otaRequestId = DateTime.now().microsecondsSinceEpoch & 0xffffffff;
+  Future<void>? _otaOperation;
+
+  Future<void> refreshOtaWindow({bool probe = false}) async {
+    final generation = _generation;
+    if (_otaReadGeneration == generation ||
+        (!_snapshot.isConnected && !probe) ||
+        _disposed) {
+      return;
+    }
+    _otaReadGeneration = generation;
+    try {
+      final raw = await link.read(OtaWindowStatus.uuid).timeout(commandTimeout);
+      _checkGeneration(generation);
+      otaWindow = OtaWindowStatus.decode(raw);
+      otaSupported = true;
+      _emit(_copy());
+    } catch (_) {
+      if (generation == _generation) {
+        if (probe) otaSupported = false;
+        otaWindow =
+            null; // A failed read never leaves credentials/status fresh.
+        _emit(_copy());
+      }
+    } finally {
+      if (_otaReadGeneration == generation) _otaReadGeneration = null;
+    }
+  }
+
+  Future<void> changeOtaWindow(bool open) {
+    if (_otaOperation != null) return Future.error(StateError('升级操作正在进行'));
+    return _otaOperation = _changeOtaWindow(
+      open,
+    ).whenComplete(() => _otaOperation = null);
+  }
+
+  Future<void> _changeOtaWindow(bool open) async {
+    if (otaSupported != true || !_snapshot.isConnected) {
+      throw StateError('当前固件或连接不支持无线升级');
+    }
+    if (open && otaWindow?.signingReady != true) {
+      throw StateError('固件签名升级尚未就绪');
+    }
+    if (!open && otaWindow?.isCommitted == true) {
+      throw StateError('镜像已提交，不能声称取消升级');
+    }
+    if (open && maintenanceMode && otaWindow?.isOpen == true) return;
+    final window = open ? 0 : otaWindow?.windowId;
+    if (window == null ||
+        (!open && window == 0 && otaWindow?.isClosed != true)) {
+      throw StateError('窗口状态未知，无法确认关闭');
+    }
+    final generation = _generation;
+    maintenanceMode = true;
+    cancelPendingTargets();
+    _keepalive?.cancel();
+    _stateRefresh?.cancel();
+    _diagnosticRefresh?.cancel();
+    _token = 0;
+    _emit(_copy(phase: DeviceSessionPhase.maintenance, token: 0));
+    _otaRequestId = (_otaRequestId + 1) & 0xffffffff;
+    if (_otaRequestId == 0) _otaRequestId = 1;
+    final id = _otaRequestId;
+    final bytes = OtaWindowStatus.request(
+      open: open,
+      requestId: id,
+      windowId: window,
+    );
+    final done = Completer<void>();
+    _writeTail = _writeTail.catchError((Object _) {}).then((_) async {
+      try {
+        for (var attempt = 0; attempt < 4; attempt++) {
+          _checkGeneration(generation);
+          if (!_snapshot.isConnected) throw StateError('升级蓝牙连接已断开');
+          // A timeout can mean accepted: reconcile via status before retrying.
+          try {
+            await link
+                .write(OtaWindowStatus.uuid, bytes)
+                .timeout(commandTimeout);
+          } catch (_) {
+            _checkGeneration(generation);
+          }
+          for (var poll = 0; poll < 4; poll++) {
+            await refreshOtaWindow();
+            _checkGeneration(generation);
+            final status = otaWindow;
+            if (status != null && status.ackRequestId == id) {
+              if (status.result != 0) {
+                throw StateError('升级请求被设备拒绝（代码 ${status.result}）');
+              }
+              if (open ? status.isOpen : status.isClosed) {
+                if (!done.isCompleted) done.complete();
+                return;
+              }
+              if (status.isCommitted || status.state == 6) {
+                throw StateError('设备未完成请求的窗口操作');
+              }
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 150));
+          }
+        }
+        throw StateError(open ? '开启未确认；设备可能已开窗，请查看窗口状态' : '关闭未确认；设备窗口可能仍有效');
+      } catch (error, stack) {
+        if (!done.isCompleted) done.completeError(error, stack);
+      }
+    });
+    return done.future;
+  }
 
   void _emit(DeviceSessionSnapshot next) {
     if (_disposed) return;
@@ -173,6 +289,10 @@ class DeviceSession {
 
   Future<void> connect(String id, {String? expectedIdentity}) async {
     final generation = ++_generation;
+    maintenanceMode = false;
+    otaSupported = null;
+    otaWindow = null;
+    _otaRefresh?.cancel();
     _clearPending();
     _token = 0;
     _nextSequence = 1;
@@ -230,6 +350,19 @@ class DeviceSession {
           );
       _emit(_copy(identity: identity, deviceInfo: info));
       _emit(_copy(phase: DeviceSessionPhase.claiming));
+      await refreshOtaWindow(probe: true);
+      _checkGeneration(generation);
+      if (otaSupported == true) {
+        _otaRefresh = Timer.periodic(
+          const Duration(seconds: 1),
+          (_) => refreshOtaWindow(),
+        );
+      }
+      if (otaWindow != null && !otaWindow!.isClosed) {
+        maintenanceMode = true;
+        _emit(_copy(phase: DeviceSessionPhase.maintenance, token: 0));
+        return; // Authenticated maintenance needs no CLAIM or ARM.
+      }
       final claim = await _command(
         BleOpcode.claim,
         token: 0,
@@ -507,6 +640,7 @@ class DeviceSession {
     _writeTail = _writeTail.catchError((Object _) {}).then((_) async {
       try {
         _checkGeneration(sessionGeneration);
+        if (maintenanceMode) throw StateError('升级维护中，控制会话已暂停');
         if (targetGeneration != null && targetGeneration != _targetGeneration) {
           throw const TargetCancelledException();
         }
@@ -809,6 +943,8 @@ class DeviceSession {
     _keepalive?.cancel();
     _stateRefresh?.cancel();
     _diagnosticRefresh?.cancel();
+    _otaRefresh?.cancel();
+    otaWindow = null;
     _clearPending();
     cancelPendingTargets();
     final notifications = _eventSub;
@@ -829,6 +965,8 @@ class DeviceSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _otaRefresh?.cancel();
+    otaWindow = null;
     _generation++;
     _keepalive?.cancel();
     _stateRefresh?.cancel();

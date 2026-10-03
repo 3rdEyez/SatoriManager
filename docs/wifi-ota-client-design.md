@@ -1,6 +1,6 @@
 # 限时浏览器 OTA 与离线包预检
 
-当前阶段只完成纯内存 package 预检及本地设计：没有接入 App UI、BLE 新协议、文件选择器、网络、Android 权限或服务，没有生成正式密钥、刷入签名 seed 或在设备开网。双槽/回滚基础不等于已完成无线升级。
+App 0.2.6+8 已接入设置页升级入口、独立认证 BLE 扩展、状态确认和退出流程；内存 package 预检仍不验签或传输。没有添加文件选择器、App Wi-Fi 绑定、新 Android 权限或服务，没有生成正式密钥、刷入签名 seed 或在设备开网。本地闭环模拟不等于无线部署完成。
 
 ## 简化操作路径（实现/部署边界）
 
@@ -51,3 +51,15 @@ Android13+ 管理 Wi-Fi 需评估 `NEARBY_WIFI_DEVICES` runtime permission 和 `
 ## 本地验证与后续边界
 
 八项测试涵盖摘要声明、无验签阻止、错误目标/格式/旧字段、槽与文件长度边界、版本/注入、长度前缀容器、畸形 UTF-8/JSON、截断/尾随数据、不可变副本。这不代表签名真实性或真实 OTA 测试。后续需验正确/错误 RSA key、签名损坏/无签名、seed 信任链、错误 app 描述、窗口中断/超时、浏览器/OEM 行为及回滚；设备与正式密钥动作另按批准范围执行。
+
+## App 开窗与退出闭环
+
+设置页区分旧固件不支持、扩展存在但签名升级未就绪、真实开窗连接资料和未知状态。开启之前撤销自动动作和自动 ARM 意图，等待既有 HALT 确认。独立 UUID `4d89f6a0-73b9-4f14-9d3e-63b2145a0007` 为 encrypted/authenticated READ+WRITE；不改 DeviceInfo 能力或 Control v1.2。命令与控制写共用串行队列；维护中清本机 CLAIM，停旧心跳/控制状态轮询。
+
+请求10字节：v1/action(open1,close2)/requestId LE32/windowId LE32。requestId非零；open windowId=0；close windowId非零且匹配当前窗口。状态18字节头+SSID/password ASCII：v1、state0..6、result0..6、reserved0、ACK requestId LE32、windowId LE32、remainingMs LE32、SSID长度、密码长度。SSID≤32、密码≤64。state closed0/opening1/open2/uploading3/closing4/committed5/failed6；result ok0/busy1/signing-not-ready2/invalid3/not-ready4/stale-window5/internal6。
+
+写成功不算ACK。App仅匹配requestId/result0/目标最终状态才确认命令；丢失回执同id同字节有界重试，不新开/延长窗口。剩余时限来自设备读回，不凭本机倒计时宣称关闭。committed只称镜像已提交/待重启验证，不能取消冒充撤销或称升级完成。临时SSID/password仅有效UI状态使用，不日志/持久化；读取失败或掉线清除。
+
+开窗首次await之前锁住自动恢复，也覆盖HALT中途掉线。维护断线不自动连接/ARM；用户可点“重新连接确认窗口状态”。认证连接先读维护状态，已有窗口跳过CLAIM/ARM，仅管理窗口；浏览器上传不依赖此连接。Closed真实确认后可“退出升级并重新连接”：断开、fresh CLAIM、保持暂停。禁自动ARM意图跨后续断线保留，直到用户明确启用控制成功；普通拍摄原有断线恢复规则保留。
+
+当前固件版本来自fresh DeviceInfo，未获得目标版本和启动验证不声称升级成功。可变长度BLE长读与OEM实机行为尚未测，部署时需验证。新增维护测试覆盖HALT断线、旧固件/未ready、丢ACK与超时、重复请求、迟到状态、提交拒取消、断线和freshCLAIM退出；UI测试覆盖连接资料与未知状态恢复入口。它们不代表设备网络或正式签名测试。

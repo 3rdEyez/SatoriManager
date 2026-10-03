@@ -44,6 +44,10 @@ class ControlEngine {
   String? incompatibleFirmware;
   String? incompatibleProtocol;
   bool pauseInProgress = false;
+  bool otaMaintenance = false;
+  bool otaBusy = false;
+  bool _otaResumeBlocked = false;
+  String? otaNotice;
   bool explicitlyPaused = false;
   String? endState;
   String? deviceId;
@@ -83,6 +87,11 @@ class ControlEngine {
           ((s.deviceInfo?.capabilities ?? 0) & 0x80) != 0,
       'supportsSharedPairing': s.deviceInfo?.supportsSharedPairing ?? false,
       'pairingNotice': pairingNotice,
+      'otaSupported': s.isConnected && session.otaSupported == true,
+      'otaWindow': s.isConnected ? session.otaWindow?.toUiJson() : null,
+      'otaMaintenance': otaMaintenance,
+      'otaBusy': otaBusy,
+      'otaNotice': otaNotice,
       'maxTargetHz': s.deviceInfo?.maxTargetHz,
       'mode': mode,
       'playback': playback,
@@ -137,13 +146,20 @@ class ControlEngine {
       _cancelMotion();
       outputAuthorized = false;
       target = null;
+      if (otaMaintenance) {
+        connection = 'disconnected';
+        otaNotice = '蓝牙已断开，窗口状态未知；浏览器上传不依赖蓝牙。请等窗口自动超时。';
+        _autoStartPending = false;
+        _notify();
+        return;
+      }
       connection = 'reconnecting';
       error = '连接中断，动作已取消';
       _reconnectAttempt = 0;
       // A disconnect creates one recovery auto-start intent. Every retry in
       // this backoff round shares it, so a pause can revoke it permanently.
       final autoStartGeneration = ++_autoStartGeneration;
-      _autoStartPending = true;
+      _autoStartPending = !_otaResumeBlocked;
       _scheduleReconnect(_connectionGeneration, autoStartGeneration);
     }
     _notify();
@@ -152,6 +168,7 @@ class ControlEngine {
   Future<void> connect(
     String id, {
     SafetyLimits? limits,
+    bool autoStart = true,
     String? expectedIdentity,
     Future<SafetyLimits?> Function(String identity)? safetyForIdentity,
   }) async {
@@ -160,15 +177,18 @@ class ControlEngine {
         connection == 'reconnecting') {
       throw StateError('请先结束当前连接');
     }
+    autoStart = autoStart && !_otaResumeBlocked;
     endState = null;
+    otaNotice = null;
+    otaMaintenance = false;
     _ending = false;
     _reconnect?.cancel();
     final generation = ++_connectionGeneration;
     final autoStartGeneration = ++_autoStartGeneration;
-    _autoStartPending = true;
+    _autoStartPending = autoStart;
     _cancelMotion();
     outputAuthorized = false;
-    explicitlyPaused = false;
+    explicitlyPaused = !autoStart;
     target = null;
     safety = limits ?? SafetyLimits.builtInSatoriC3;
     deviceId = id;
@@ -195,6 +215,12 @@ class ControlEngine {
       }
       connection = 'connected';
       _identity = authenticatedIdentity;
+      if (session.maintenanceMode) {
+        otaMaintenance = true;
+        _otaResumeBlocked = true;
+        _autoStartPending = false;
+        explicitlyPaused = true;
+      }
       await _tryAutoStart(autoStartGeneration);
     } catch (e) {
       if (generation == _connectionGeneration) {
@@ -230,7 +256,11 @@ class ControlEngine {
   }
 
   Future<void> _tryAutoStart(int generation) async {
-    if (generation != _autoStartGeneration || !_autoStartPending) return;
+    if (generation != _autoStartGeneration ||
+        !_autoStartPending ||
+        _otaResumeBlocked) {
+      return;
+    }
     if (connection != 'connected') return;
     safety ??= SafetyLimits.builtInSatoriC3;
     _autoStartPending = false;
@@ -280,9 +310,11 @@ class ControlEngine {
   Future<void> arm() async {
     if (outputAuthorized) return;
     await _arm(_autoStartGeneration, autoStart: false);
+    _otaResumeBlocked = false;
   }
 
   Future<void> _arm(int autoStartGeneration, {required bool autoStart}) async {
+    if (otaMaintenance || otaBusy) throw StateError('请先确认关闭并退出升级模式');
     if (_pairingOperation) throw StateError('配对设置处理中，请稍候');
     if (connection != 'connected') throw StateError('设备尚未就绪');
     safety ??= SafetyLimits.builtInSatoriC3;
@@ -321,7 +353,9 @@ class ControlEngine {
   }
 
   void _requireControl() {
-    if (_pairingOperation ||
+    if (otaMaintenance ||
+        otaBusy ||
+        _pairingOperation ||
         connection != 'connected' ||
         !outputAuthorized ||
         target == null ||
@@ -567,7 +601,7 @@ class ControlEngine {
           if (autoStartGeneration == _autoStartGeneration) {
             // A failed attempt may not have reached ARM. Keep the intent for
             // the next retry unless pause has advanced the generation.
-            _autoStartPending = true;
+            _autoStartPending = !_otaResumeBlocked;
           }
           _scheduleReconnect(generation, autoStartGeneration);
         }
@@ -675,6 +709,96 @@ class ControlEngine {
       _pairingOperation = false;
       _notify();
     }
+  }
+
+  Future<void> openOtaWindow({void Function()? ensureCurrentClient}) async {
+    if (otaBusy) throw StateError('升级操作正在进行');
+    if (session.otaSupported != true || connection != 'connected') {
+      throw StateError('当前固件不支持无线升级窗口');
+    }
+    otaBusy = true;
+    _otaResumeBlocked = true;
+    otaNotice = null;
+    final wasMaintenance = otaMaintenance;
+    otaMaintenance = true; // Also protect a disconnect while HALT is pending.
+    _autoStartPending = false;
+    ++_autoStartGeneration;
+    _reconnect?.cancel();
+    try {
+      if (!wasMaintenance) await stopMotion();
+      _autoStartPending = false;
+      ++_autoStartGeneration;
+      _reconnect?.cancel();
+      ensureCurrentClient?.call();
+      await session.changeOtaWindow(true);
+      otaNotice = '窗口已由设备确认开启；按下面指引在浏览器上传签名升级包。';
+    } catch (_) {
+      otaNotice = '开启未确认；请查看设备状态。不要把写入成功当作已开窗。';
+      rethrow;
+    } finally {
+      otaBusy = false;
+      _notify();
+    }
+  }
+
+  Future<void> closeOtaWindow({void Function()? ensureCurrentClient}) async {
+    if (otaBusy) throw StateError('升级操作正在进行');
+    otaBusy = true;
+    final wasMaintenance = otaMaintenance;
+    otaMaintenance = true;
+    _otaResumeBlocked = true;
+    try {
+      if (!wasMaintenance) await stopMotion();
+      ensureCurrentClient?.call();
+      await session.changeOtaWindow(false);
+      otaNotice = '设备已确认窗口关闭；控制仍暂停。退出升级后可重新连接。';
+    } catch (_) {
+      otaNotice = session.otaWindow?.isCommitted == true
+          ? '镜像已提交，不能取消或声称撤销；等待设备重启。'
+          : '关闭未确认；窗口可能仍有效，请等待自动超时。';
+      rethrow;
+    } finally {
+      otaBusy = false;
+      _notify();
+    }
+  }
+
+  Future<void> reconnectOtaMaintenance() async {
+    if (otaBusy || (connection != 'disconnected' && connection != 'failed')) {
+      throw StateError('当前不能重新连接');
+    }
+    final id = deviceId;
+    if (id == null || !_otaResumeBlocked) throw StateError('没有可恢复的升级会话');
+    await connect(
+      id,
+      expectedIdentity: _identity,
+      limits: safety,
+      autoStart: false,
+    );
+    otaNotice = session.otaWindow == null
+        ? '已连接，但升级窗口状态未确认；控制保持暂停。'
+        : '已从设备重新读取窗口状态；控制保持暂停。';
+    _notify();
+  }
+
+  Future<void> exitOtaMaintenance() async {
+    if (otaBusy) throw StateError('升级操作正在进行');
+    if (connection != 'connected' || session.otaWindow?.isClosed != true) {
+      throw StateError('必须先由设备确认窗口关闭；蓝牙断开时请等待超时后重新连接');
+    }
+    final id = deviceId, identity = _identity, limits = safety;
+    if (id == null) throw StateError('设备身份未知');
+    _ending = true;
+    await session.disconnect();
+    connection = 'disconnected';
+    await connect(
+      id,
+      expectedIdentity: identity,
+      limits: limits,
+      autoStart: false,
+    );
+    otaNotice = '已退出升级并建立新会话；保持暂停，需手动启用控制。';
+    _notify();
   }
 
   Future<void> disconnect() => _disconnecting ??= _disconnect().whenComplete(

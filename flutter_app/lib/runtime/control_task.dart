@@ -230,6 +230,16 @@ class ControlTask extends TaskHandler {
           await active.openTransfer(ensureCurrentClient: ensureCurrentClient);
         case 'cancelTransfer':
           await active.cancelTransfer(ensureCurrentClient: ensureCurrentClient);
+        case 'openOtaWindow':
+          await active.openOtaWindow(ensureCurrentClient: ensureCurrentClient);
+        case 'closeOtaWindow':
+          await active.closeOtaWindow(ensureCurrentClient: ensureCurrentClient);
+        case 'reconnectOtaMaintenance':
+          ensureCurrentClient();
+          await active.reconnectOtaMaintenance();
+        case 'exitOtaMaintenance':
+          ensureCurrentClient();
+          await active.exitOtaMaintenance();
         case 'arm':
           await active.arm();
         case 'manual':
