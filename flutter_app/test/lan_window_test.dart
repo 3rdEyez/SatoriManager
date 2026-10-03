@@ -110,6 +110,8 @@ void main() {
       ('s', 'a' * 64),
       ('s', 'abcdefgh\n'),
       ('s\u0000', 'abcdefgh'),
+      ('s\n', 'abcdefgh'),
+      ('s\u007f', 'abcdefgh'),
     ]) {
       expect(
         () => LanWindowStatus.lanRequest(

@@ -77,7 +77,7 @@ class LanWindowStatus extends OtaWindowStatus {
     if (open
         ? (ssidBytes.isEmpty ||
               ssidBytes.length > 32 ||
-              ssidBytes.contains(0) ||
+              ssidBytes.any((v) => v < 32 || v == 127) ||
               passwordBytes.length < 8 ||
               passwordBytes.length > 63 ||
               passwordBytes.any((v) => v < 32 || v > 126))
