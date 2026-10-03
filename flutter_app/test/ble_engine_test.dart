@@ -74,6 +74,82 @@ class Harness {
 }
 
 void main() {
+  test(
+    'ending filming cancels all motion, releases once, and never reconnects',
+    () async {
+      final h = Harness();
+      addTearDown(h.close);
+      await h.connect();
+      h.engine.setAutoRotate(true);
+      h.engine.setAutoWink(true);
+      await h.flush();
+      final count = h.targets.length;
+      await Future.wait([h.engine.disconnect(), h.engine.disconnect()]);
+      for (final timer in h.timers) {
+        timer.fire();
+      }
+      await h.flush();
+      expect(h.engine.endState, 'confirmed');
+      expect(h.engine.connection, 'disconnected');
+      expect(h.engine.autoRotate, false);
+      expect(h.engine.autoWink, false);
+      expect(h.engine.outputAuthorized, false);
+      expect(h.targets.length, count);
+      expect(
+        h.link.writes
+            .map(BleProtocol.decodeControlFrame)
+            .where((f) => f.opcode == BleOpcode.release.value)
+            .length,
+        1,
+      );
+      await h.engine.disconnect();
+      expect(h.engine.endState, 'confirmed');
+    },
+  );
+
+  test(
+    'ending during reconnect cancels retry and reports only local cancellation',
+    () async {
+      final h = Harness();
+      addTearDown(h.close);
+      await h.connect();
+      await h.link.disconnect();
+      await h.flush();
+      final arms = h.armCount;
+      expect(h.engine.connection, 'reconnecting');
+      await h.engine.disconnect();
+      for (final timer in h.timers) {
+        timer.fire();
+      }
+      await h.flush();
+      expect(h.engine.connection, 'disconnected');
+      expect(h.engine.endState, 'localOnly');
+      expect(h.armCount, arms);
+    },
+  );
+
+  test(
+    'lost release ACK cancels locally without claiming device stop confirmed',
+    () async {
+      final link = FakeBleLink();
+      final session = DeviceSession(
+        link,
+        commandTimeout: const Duration(milliseconds: 20),
+        maxRetries: 1,
+      );
+      final engine = ControlEngine(session, {});
+      await engine.connect('fake');
+      link.dropNextReplies = 10;
+      await engine.disconnect();
+      expect(engine.endState, 'unconfirmed');
+      expect(engine.issueCode, 'releaseUnconfirmed');
+      expect(engine.outputAuthorized, false);
+      expect(engine.connection, 'disconnected');
+      await engine.dispose();
+      await link.dispose();
+    },
+  );
+
   test('connect auto-ARMs known safe startup channels', () async {
     final h = Harness();
     addTearDown(h.close);

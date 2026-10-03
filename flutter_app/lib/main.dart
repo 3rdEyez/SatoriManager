@@ -393,9 +393,13 @@ class _ControlShellState extends State<ControlShell>
               ),
               const SizedBox(width: 3),
               Tooltip(
-                message: stale ? '电量数据已超过 1 分钟' : '设备电量',
+                message: battery == null
+                    ? '设备未提供电量采样'
+                    : stale
+                    ? '电量数据已超过 1 分钟'
+                    : '设备电量',
                 child: Text(
-                  battery == null ? '—' : '$battery%',
+                  battery == null ? '未知' : '$battery%',
                   style: TextStyle(
                     fontSize: 11,
                     color: p.ink,
@@ -683,6 +687,20 @@ class _ControlShellState extends State<ControlShell>
           ),
         ),
       ],
+      if (connected || state['connection'] == 'reconnecting') ...[
+        const SizedBox(height: 12),
+        Center(
+          child: TextButton.icon(
+            onPressed: busy ? null : _disconnect,
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: const Text('结束拍摄'),
+          ),
+        ),
+        Text(
+          '停止动作并释放控制；设备仍需用电源开关关闭。',
+          style: TextStyle(color: p.muted, fontSize: 12),
+        ),
+      ],
     ]);
   }
 
@@ -908,11 +926,16 @@ class _ControlShellState extends State<ControlShell>
         SizedBox(
           width: double.infinity,
           child: _outlinedAction(
-            '断开控制会话',
+            '结束拍摄',
             Icons.link_off_rounded,
             busy ? null : _disconnect,
             danger: true,
           ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '停止自动动作并释放控制。设备仍需用电源开关关闭。',
+          style: TextStyle(color: p.muted, fontSize: 12),
         ),
       ] else ...[
         const SizedBox(height: 16),
@@ -990,6 +1013,38 @@ class _ControlShellState extends State<ControlShell>
           _settingRow('应用 BLE 协议', '${state['appProtocol'] ?? '未知'}'),
           _settingRow('设备 BLE 协议', '${state['deviceProtocol'] ?? '未知'}'),
           _settingRow('控制状态', controlStatus(state)),
+          _settingRow(
+            '设备电量',
+            state['battery'] == null ? '未知（未采样）' : '${state['battery']}%',
+          ),
+          if (state['diagnostics'] is Map) ...[
+            _settingRow(
+              '诊断样本',
+              diagnosticsAreFresh(state) ? '最近采样' : '历史数据，已过期',
+            ),
+            _settingRow(
+              '上次停止原因',
+              diagnosticStopReason(state['diagnostics']['lastStop'] as int?),
+            ),
+            _settingRow(
+              '固件故障记录',
+              diagnosticFaults(state['diagnostics']['faults'] as int? ?? 0),
+            ),
+            _settingRow('启动原因代码', '${state['diagnostics']['resetReason']}'),
+            _settingRow('本次启动时长', '${state['diagnostics']['uptimeSeconds']} 秒'),
+            _settingRow('上次蓝牙断开代码', '${state['diagnostics']['lastGapReason']}'),
+            _settingRow(
+              '心跳超时次数',
+              '${state['diagnostics']['leaseExpiryCount']}',
+            ),
+            _settingRow('蓝牙断开次数', '${state['diagnostics']['disconnectCount']}'),
+            _settingRow(
+              '通知发送失败次数',
+              '${state['diagnostics']['notificationFailureCount']}',
+            ),
+            _settingRow('诊断采样时间', '${state['diagnosticsAt'] ?? '未知'}'),
+          ] else
+            _settingRow('固件诊断', '暂无数据（旧固件可正常控制）'),
           if (state['error'] != null) _settingRow('设备错误', '${state['error']}'),
           if (client.message != null) _settingRow('后台错误', client.message!),
           if (_localError != null) _settingRow('界面错误', _localError!),

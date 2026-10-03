@@ -45,6 +45,7 @@ class ControlEngine {
   String? incompatibleProtocol;
   bool pauseInProgress = false;
   bool explicitlyPaused = false;
+  String? endState;
   String? deviceId;
   String? _identity;
   SafetyLimits? safety;
@@ -63,6 +64,7 @@ class ControlEngine {
   Timer? _frame;
   Timer? _reconnect;
   int _reconnectAttempt = 0;
+  Future<void>? _disconnecting;
 
   Map<String, Object?> snapshot() {
     final s = session.snapshot;
@@ -94,6 +96,9 @@ class ControlEngine {
       'lastAckSequence': s.lastAckSequence,
       'lastAckAt': s.lastAckAt?.toIso8601String(),
       'battery': s.state?.batteryPercent,
+      'diagnostics': s.diagnostics?.toJson(),
+      'diagnosticsAt': s.diagnosticsAt?.toIso8601String(),
+      'endState': endState,
       'safety': safety?.toJson(),
       'error': error ?? s.lastError,
       'issueCode': issueCode,
@@ -155,6 +160,7 @@ class ControlEngine {
         connection == 'reconnecting') {
       throw StateError('请先结束当前连接');
     }
+    endState = null;
     _ending = false;
     _reconnect?.cancel();
     final generation = ++_connectionGeneration;
@@ -671,7 +677,12 @@ class ControlEngine {
     }
   }
 
-  Future<void> disconnect() async {
+  Future<void> disconnect() => _disconnecting ??= _disconnect().whenComplete(
+    () => _disconnecting = null,
+  );
+
+  Future<void> _disconnect() async {
+    if (_ending && connection == 'disconnected' && endState != null) return;
     _ending = true;
     ++_connectionGeneration;
     ++_autoStartGeneration;
@@ -680,12 +691,28 @@ class ControlEngine {
     _reconnect?.cancel();
     _cancelMotion();
     outputAuthorized = false;
+    explicitlyPaused = true;
+    final hadSession =
+        session.snapshot.isConnected && session.snapshot.token != 0;
+    endState = 'ending';
+    error = null;
+    issueCode = null;
+    _notify();
     try {
       await session.release();
-    } catch (e) {
-      error = '断开确认未收到：$e';
+      endState = hadSession ? 'confirmed' : 'localOnly';
+    } catch (_) {
+      endState = 'unconfirmed';
+      error = '本机动作已取消，设备停止未确认；设备按原有断线/租约规则处理。';
+      issueCode = 'releaseUnconfirmed';
     }
-    await session.disconnect();
+    try {
+      await session.disconnect();
+    } catch (_) {
+      endState = 'unconfirmed';
+      error = '本机动作已取消，断开未确认；请检查连接和设备状态。';
+      issueCode = 'releaseUnconfirmed';
+    }
     connection = 'disconnected';
     target = null;
     _notify();

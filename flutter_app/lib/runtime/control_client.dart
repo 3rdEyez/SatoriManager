@@ -130,7 +130,7 @@ class ControlClient extends ChangeNotifier {
       notificationText: '正在准备蓝牙连接',
       notificationButtons: const [
         NotificationButton(id: 'stop', text: '暂停控制'),
-        NotificationButton(id: 'disconnect', text: '断开'),
+        NotificationButton(id: 'disconnect', text: '结束拍摄'),
       ],
       callback: startControlTask,
     );

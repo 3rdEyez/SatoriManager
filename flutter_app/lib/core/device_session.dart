@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'ble_protocol.dart';
 import 'ble_compatibility.dart';
+import 'ble_diagnostics.dart';
 
 enum BleLinkState { disconnected, connecting, connected }
 
@@ -37,6 +38,8 @@ class DeviceSessionSnapshot {
     this.lastAckSequence,
     this.lastAckAt,
     this.lastError,
+    this.diagnostics,
+    this.diagnosticsAt,
   });
   final DeviceSessionPhase phase;
   final String? identity;
@@ -46,6 +49,8 @@ class DeviceSessionSnapshot {
   final int? lastAckSequence;
   final DateTime? lastAckAt;
   final String? lastError;
+  final BleDiagnostics? diagnostics;
+  final DateTime? diagnosticsAt;
   bool get isConnected =>
       phase == DeviceSessionPhase.readyPaused ||
       phase == DeviceSessionPhase.armed;
@@ -129,6 +134,8 @@ class DeviceSession {
   int _targetGeneration = 0;
   Duration? _lastTargetSentAt;
   Timer? _stateRefresh;
+  Timer? _diagnosticRefresh;
+  bool _diagnosticReadInProgress = false;
   bool _stateReadInProgress = false;
   bool _releaseInProgress = false;
 
@@ -148,6 +155,8 @@ class DeviceSession {
     int? lastAckSequence,
     DateTime? lastAckAt,
     String? lastError,
+    BleDiagnostics? diagnostics,
+    DateTime? diagnosticsAt,
   }) => DeviceSessionSnapshot(
     phase: phase ?? _snapshot.phase,
     identity: identity ?? _snapshot.identity,
@@ -158,6 +167,8 @@ class DeviceSession {
     lastAckSequence: lastAckSequence ?? _snapshot.lastAckSequence,
     lastAckAt: lastAckAt ?? _snapshot.lastAckAt,
     lastError: lastError,
+    diagnostics: diagnostics ?? _snapshot.diagnostics,
+    diagnosticsAt: diagnosticsAt ?? _snapshot.diagnosticsAt,
   );
 
   Future<void> connect(String id, {String? expectedIdentity}) async {
@@ -258,6 +269,16 @@ class DeviceSession {
         const Duration(milliseconds: 500),
         (_) => _refreshState(),
       );
+      // Optional patch-level extension. Reads cannot renew the safety lease;
+      // a missing/failed characteristic never blocks ARM or the heartbeat.
+      _diagnosticRefresh?.cancel();
+      if (info.firmwarePatch >= 3) {
+        unawaited(_refreshDiagnostics());
+        _diagnosticRefresh = Timer.periodic(
+          const Duration(seconds: 5),
+          (_) => _refreshDiagnostics(),
+        );
+      }
     } catch (e) {
       if (generation == _generation) {
         await _eventSub?.cancel();
@@ -448,6 +469,7 @@ class DeviceSession {
     cancelPendingTargets();
     _keepalive?.cancel();
     _stateRefresh?.cancel();
+    _diagnosticRefresh?.cancel();
     try {
       await _enqueueCommand(BleOpcode.release);
     } finally {
@@ -460,6 +482,7 @@ class DeviceSession {
   Future<void> disconnect() async {
     _releaseInProgress = true;
     _stateRefresh?.cancel();
+    _diagnosticRefresh?.cancel();
     ++_generation;
     cancelPendingTargets();
     _keepalive?.cancel();
@@ -645,6 +668,33 @@ class DeviceSession {
     throw error;
   }
 
+  Future<void> _refreshDiagnostics() async {
+    if (_releaseInProgress ||
+        _diagnosticReadInProgress ||
+        !_snapshot.isConnected ||
+        _disposed) {
+      return;
+    }
+    _diagnosticReadInProgress = true;
+    final generation = _generation;
+    try {
+      final bytes = await link
+          .read(BleDiagnostics.uuid)
+          .timeout(const Duration(milliseconds: 500));
+      if (generation != _generation || _releaseInProgress || _disposed) return;
+      _emit(
+        _copy(
+          diagnostics: BleDiagnostics.decode(bytes),
+          diagnosticsAt: DateTime.now(),
+        ),
+      );
+    } catch (_) {
+      // Keep the last timestamp, so old samples can never appear fresh.
+    } finally {
+      _diagnosticReadInProgress = false;
+    }
+  }
+
   Future<void> _refreshState() async {
     if (_releaseInProgress ||
         _stateReadInProgress ||
@@ -758,6 +808,7 @@ class DeviceSession {
     _token = 0;
     _keepalive?.cancel();
     _stateRefresh?.cancel();
+    _diagnosticRefresh?.cancel();
     _clearPending();
     cancelPendingTargets();
     final notifications = _eventSub;
@@ -781,6 +832,7 @@ class DeviceSession {
     _generation++;
     _keepalive?.cancel();
     _stateRefresh?.cancel();
+    _diagnosticRefresh?.cancel();
     await _eventSub?.cancel();
     await _linkSub?.cancel();
     await _updates.close();

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:satori_manager/main.dart';
 import 'package:satori_manager/joystick_pad.dart';
 import 'package:satori_manager/runtime/control_client.dart';
@@ -24,9 +25,16 @@ void main() {
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(find.text('蓝牙 · BLE'), findsOneWidget);
+      expect(find.text('结束拍摄'), findsOneWidget);
       expect(find.text('安全范围'), findsNothing);
+      await tester.scrollUntilVisible(find.text('设备详情'), 200);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -180));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('设备详情'));
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('未知（未采样）'), 100);
+      expect(find.text('未知（未采样）'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('设备实际姿态未回传'), 100);
       expect(find.text('设备实际姿态未回传'), findsOneWidget);
     },
   );
@@ -66,6 +74,8 @@ void main() {
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('设备详情'), 200);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -180));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('设备详情'));
     await tester.pumpAndSettle();
     expect(find.textContaining('private firmware exception'), findsOneWidget);
