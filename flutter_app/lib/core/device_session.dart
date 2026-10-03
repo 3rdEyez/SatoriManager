@@ -4,6 +4,7 @@ import 'ble_protocol.dart';
 import 'ble_compatibility.dart';
 import 'ble_diagnostics.dart';
 import 'ota_window.dart';
+import 'lan_window.dart';
 
 enum BleLinkState { disconnected, connecting, connected }
 
@@ -144,6 +145,63 @@ class DeviceSession {
   bool maintenanceMode = false;
   bool? otaSupported;
   OtaWindowStatus? otaWindow;
+  bool? lanSupported;
+  LanWindowStatus? lanWindow;
+  String? maintenancePath;
+  OtaWindowStatus? get activeMaintenanceWindow =>
+      maintenancePath == 'lan' ? lanWindow : otaWindow;
+  int? _lanReadGeneration;
+  Timer? _lanRefresh;
+
+  Future<void> refreshLanWindow({bool probe = false}) async {
+    final generation = _generation;
+    if (_lanReadGeneration == generation ||
+        (!_snapshot.isConnected && !probe) ||
+        _disposed) {
+      return;
+    }
+    _lanReadGeneration = generation;
+    try {
+      final raw = await link
+          .read(LanWindowStatus.lanUuid)
+          .timeout(commandTimeout);
+      _checkGeneration(generation);
+      lanWindow = LanWindowStatus.decode(raw);
+      lanSupported = true;
+      _emit(_copy());
+    } catch (_) {
+      if (generation == _generation) {
+        if (probe) lanSupported = false;
+        lanWindow = null;
+        _emit(_copy());
+      }
+    } finally {
+      if (_lanReadGeneration == generation) _lanReadGeneration = null;
+    }
+  }
+
+  Future<void> changeLanWindow(
+    bool open, {
+    String ssid = '',
+    String password = '',
+  }) {
+    if (_otaOperation != null) return Future.error(StateError('升级操作正在进行'));
+    // Validate locally without mutating the session or sending credentials.
+    LanWindowStatus.lanRequest(
+      open: open,
+      requestId: 1,
+      windowId: open ? 0 : (lanWindow?.windowId ?? 0),
+      ssid: ssid,
+      password: password,
+    );
+    return _otaOperation = _changeOtaWindow(
+      open,
+      lan: true,
+      ssid: ssid,
+      password: password,
+    ).whenComplete(() => _otaOperation = null);
+  }
+
   Timer? _otaRefresh;
   int? _otaReadGeneration;
   int _otaRequestId = DateTime.now().microsecondsSinceEpoch & 0xffffffff;
@@ -182,24 +240,38 @@ class DeviceSession {
     ).whenComplete(() => _otaOperation = null);
   }
 
-  Future<void> _changeOtaWindow(bool open) async {
-    if (otaSupported != true || !_snapshot.isConnected) {
+  Future<void> _changeOtaWindow(
+    bool open, {
+    bool lan = false,
+    String ssid = '',
+    String password = '',
+  }) async {
+    final current = lan ? lanWindow : otaWindow;
+    final other = lan ? otaWindow : lanWindow;
+    if (open &&
+        (other != null && !other.isClosed ||
+            maintenanceMode &&
+                maintenancePath != null &&
+                maintenancePath != (lan ? 'lan' : 'ap'))) {
+      throw StateError('请先确认并关闭当前维护窗口');
+    }
+    if ((lan ? lanSupported : otaSupported) != true || !_snapshot.isConnected) {
       throw StateError('当前固件或连接不支持无线升级');
     }
-    if (open && otaWindow?.signingReady != true) {
+    if (open && current?.signingReady != true) {
       throw StateError('固件签名升级尚未就绪');
     }
-    if (!open && otaWindow?.isCommitted == true) {
+    if (!open && current?.isCommitted == true) {
       throw StateError('镜像已提交，不能声称取消升级');
     }
-    if (open && maintenanceMode && otaWindow?.isOpen == true) return;
-    final window = open ? 0 : otaWindow?.windowId;
-    if (window == null ||
-        (!open && window == 0 && otaWindow?.isClosed != true)) {
+    if (open && maintenanceMode && current?.isOpen == true) return;
+    final window = open ? 0 : current?.windowId;
+    if (window == null || (!open && window == 0 && current?.isClosed != true)) {
       throw StateError('窗口状态未知，无法确认关闭');
     }
     final generation = _generation;
     maintenanceMode = true;
+    maintenancePath = lan ? 'lan' : 'ap';
     cancelPendingTargets();
     _keepalive?.cancel();
     _stateRefresh?.cancel();
@@ -209,30 +281,49 @@ class DeviceSession {
     _otaRequestId = (_otaRequestId + 1) & 0xffffffff;
     if (_otaRequestId == 0) _otaRequestId = 1;
     final id = _otaRequestId;
-    final bytes = OtaWindowStatus.request(
-      open: open,
-      requestId: id,
-      windowId: window,
-    );
+    final bytes = lan
+        ? LanWindowStatus.lanRequest(
+            open: open,
+            requestId: id,
+            windowId: window,
+            ssid: ssid,
+            password: password,
+          )
+        : OtaWindowStatus.request(open: open, requestId: id, windowId: window);
+    final uuid = lan ? LanWindowStatus.lanUuid : OtaWindowStatus.uuid;
     final done = Completer<void>();
     _writeTail = _writeTail.catchError((Object _) {}).then((_) async {
       try {
+        if (bytes.length > 20 && link is BleLargeWriteLink) {
+          await (link as BleLargeWriteLink)
+              .prepareLargeWrite(bytes.length)
+              .timeout(const Duration(seconds: 3));
+          _checkGeneration(generation);
+        }
+        final deadline = DateTime.now().add(Duration(seconds: lan ? 26 : 12));
+        var acknowledged = false;
         for (var attempt = 0; attempt < 4; attempt++) {
           _checkGeneration(generation);
           if (!_snapshot.isConnected) throw StateError('升级蓝牙连接已断开');
           // A timeout can mean accepted: reconcile via status before retrying.
           try {
-            await link
-                .write(OtaWindowStatus.uuid, bytes)
-                .timeout(commandTimeout);
+            if (!acknowledged) {
+              await link.write(uuid, bytes).timeout(commandTimeout);
+            }
           } catch (_) {
             _checkGeneration(generation);
           }
-          for (var poll = 0; poll < 4; poll++) {
-            await refreshOtaWindow();
+          for (var poll = 0; poll < (lan ? 140 : 4); poll++) {
+            if (DateTime.now().isAfter(deadline)) break;
+            if (lan) {
+              await refreshLanWindow();
+            } else {
+              await refreshOtaWindow();
+            }
             _checkGeneration(generation);
-            final status = otaWindow;
+            final status = lan ? lanWindow : otaWindow;
             if (status != null && status.ackRequestId == id) {
+              acknowledged = true;
               if (status.result != 0) {
                 throw StateError('升级请求被设备拒绝（代码 ${status.result}）');
               }
@@ -245,6 +336,7 @@ class DeviceSession {
               }
             }
             await Future<void>.delayed(const Duration(milliseconds: 150));
+            if (lan && !acknowledged && poll >= 3) break;
           }
         }
         throw StateError(open ? '开启未确认；设备可能已开窗，请查看窗口状态' : '关闭未确认；设备窗口可能仍有效');
@@ -292,6 +384,10 @@ class DeviceSession {
     maintenanceMode = false;
     otaSupported = null;
     otaWindow = null;
+    lanWindow = null;
+    lanSupported = null;
+    maintenancePath = null;
+    _lanRefresh?.cancel();
     _otaRefresh?.cancel();
     _clearPending();
     _token = 0;
@@ -350,6 +446,14 @@ class DeviceSession {
           );
       _emit(_copy(identity: identity, deviceInfo: info));
       _emit(_copy(phase: DeviceSessionPhase.claiming));
+      await refreshLanWindow(probe: true);
+      _checkGeneration(generation);
+      if (lanSupported == true) {
+        _lanRefresh = Timer.periodic(
+          const Duration(seconds: 1),
+          (_) => refreshLanWindow(),
+        );
+      }
       await refreshOtaWindow(probe: true);
       _checkGeneration(generation);
       if (otaSupported == true) {
@@ -358,7 +462,11 @@ class DeviceSession {
           (_) => refreshOtaWindow(),
         );
       }
-      if (otaWindow != null && !otaWindow!.isClosed) {
+      if ((lanWindow != null && !lanWindow!.isClosed) ||
+          (otaWindow != null && !otaWindow!.isClosed)) {
+        maintenancePath = lanWindow != null && !lanWindow!.isClosed
+            ? 'lan'
+            : 'ap';
         maintenanceMode = true;
         _emit(_copy(phase: DeviceSessionPhase.maintenance, token: 0));
         return; // Authenticated maintenance needs no CLAIM or ARM.
@@ -944,6 +1052,8 @@ class DeviceSession {
     _stateRefresh?.cancel();
     _diagnosticRefresh?.cancel();
     _otaRefresh?.cancel();
+    _lanRefresh?.cancel();
+    lanWindow = null;
     otaWindow = null;
     _clearPending();
     cancelPendingTargets();
@@ -966,6 +1076,8 @@ class DeviceSession {
     if (_disposed) return;
     _disposed = true;
     _otaRefresh?.cancel();
+    _lanRefresh?.cancel();
+    lanWindow = null;
     otaWindow = null;
     _generation++;
     _keepalive?.cancel();

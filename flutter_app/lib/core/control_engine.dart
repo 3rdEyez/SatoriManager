@@ -87,6 +87,9 @@ class ControlEngine {
           ((s.deviceInfo?.capabilities ?? 0) & 0x80) != 0,
       'supportsSharedPairing': s.deviceInfo?.supportsSharedPairing ?? false,
       'pairingNotice': pairingNotice,
+      'lanSupported': s.isConnected && session.lanSupported == true,
+      'lanWindow': s.isConnected ? session.lanWindow?.toUiJson() : null,
+      'maintenancePath': session.maintenancePath,
       'otaSupported': s.isConnected && session.otaSupported == true,
       'otaWindow': s.isConnected ? session.otaWindow?.toUiJson() : null,
       'otaMaintenance': otaMaintenance,
@@ -711,9 +714,15 @@ class ControlEngine {
     }
   }
 
-  Future<void> openOtaWindow({void Function()? ensureCurrentClient}) async {
+  Future<void> openOtaWindow({
+    bool lan = false,
+    String ssid = '',
+    String password = '',
+    void Function()? ensureCurrentClient,
+  }) async {
     if (otaBusy) throw StateError('升级操作正在进行');
-    if (session.otaSupported != true || connection != 'connected') {
+    if ((lan ? session.lanSupported : session.otaSupported) != true ||
+        connection != 'connected') {
       throw StateError('当前固件不支持无线升级窗口');
     }
     otaBusy = true;
@@ -730,8 +739,14 @@ class ControlEngine {
       ++_autoStartGeneration;
       _reconnect?.cancel();
       ensureCurrentClient?.call();
-      await session.changeOtaWindow(true);
-      otaNotice = '窗口已由设备确认开启；按下面指引在浏览器上传签名升级包。';
+      if (lan) {
+        await session.changeLanWindow(true, ssid: ssid, password: password);
+      } else {
+        await session.changeOtaWindow(true);
+      }
+      otaNotice = lan
+          ? '设备已确认连接局域网并开启限时维护；电脑可直接打开设备地址。'
+          : '备用热点窗口已由设备确认开启；按下面指引在浏览器上传签名升级包。';
     } catch (_) {
       otaNotice = '开启未确认；请查看设备状态。不要把写入成功当作已开窗。';
       rethrow;
@@ -750,10 +765,14 @@ class ControlEngine {
     try {
       if (!wasMaintenance) await stopMotion();
       ensureCurrentClient?.call();
-      await session.changeOtaWindow(false);
+      if (session.maintenancePath == 'lan') {
+        await session.changeLanWindow(false);
+      } else {
+        await session.changeOtaWindow(false);
+      }
       otaNotice = '设备已确认窗口关闭；控制仍暂停。退出升级后可重新连接。';
     } catch (_) {
-      otaNotice = session.otaWindow?.isCommitted == true
+      otaNotice = session.activeMaintenanceWindow?.isCommitted == true
           ? '镜像已提交，不能取消或声称撤销；等待设备重启。'
           : '关闭未确认；窗口可能仍有效，请等待自动超时。';
       rethrow;
@@ -775,7 +794,7 @@ class ControlEngine {
       limits: safety,
       autoStart: false,
     );
-    otaNotice = session.otaWindow == null
+    otaNotice = session.activeMaintenanceWindow == null
         ? '已连接，但升级窗口状态未确认；控制保持暂停。'
         : '已从设备重新读取窗口状态；控制保持暂停。';
     _notify();
@@ -783,7 +802,8 @@ class ControlEngine {
 
   Future<void> exitOtaMaintenance() async {
     if (otaBusy) throw StateError('升级操作正在进行');
-    if (connection != 'connected' || session.otaWindow?.isClosed != true) {
+    if (connection != 'connected' ||
+        session.activeMaintenanceWindow?.isClosed != true) {
       throw StateError('必须先由设备确认窗口关闭；蓝牙断开时请等待超时后重新连接');
     }
     final id = deviceId, identity = _identity, limits = safety;

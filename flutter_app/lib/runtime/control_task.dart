@@ -230,6 +230,19 @@ class ControlTask extends TaskHandler {
           await active.openTransfer(ensureCurrentClient: ensureCurrentClient);
         case 'cancelTransfer':
           await active.cancelTransfer(ensureCurrentClient: ensureCurrentClient);
+        case 'openLanWindow':
+          await active.openOtaWindow(
+            lan: true,
+            ssid: data['ssid'] as String,
+            password: data['password'] as String,
+            ensureCurrentClient: ensureCurrentClient,
+          );
+        case 'readLanUploadToken':
+          await active.session.refreshLanWindow();
+          ensureCurrentClient();
+          if (active.session.lanWindow?.isOpen != true) {
+            throw StateError('局域网维护尚未就绪');
+          }
         case 'openOtaWindow':
           await active.openOtaWindow(ensureCurrentClient: ensureCurrentClient);
         case 'closeOtaWindow':
@@ -265,10 +278,19 @@ class ControlTask extends TaskHandler {
         'id': data['id'],
         'clientId': data['clientId'],
         'snapshot': snapshot(),
+        if ((data['op'] == 'openLanWindow' ||
+                data['op'] == 'readLanUploadToken') &&
+            active.session.lanWindow?.isOpen == true)
+          'privateLanWindow': {
+            'windowId': active.session.lanWindow!.windowId,
+            'token': active.session.lanWindow!.uploadToken,
+          },
       });
     } catch (error) {
       // Pairing credentials must not be echoed by plugin exceptions or replies.
-      if (data['op'] == 'setPairingCode' ||
+      if (data['op'] == 'openLanWindow' || data['op'] == 'readLanUploadToken') {
+        reject(data, StateError('局域网配置或维护未确认，请检查设备状态；输入不会保存到手机。'));
+      } else if (data['op'] == 'setPairingCode' ||
           data['op'] == 'openTransfer' ||
           data['op'] == 'cancelTransfer') {
         reject(data, StateError(active.error ?? '配对设置未确认，请检查连接后重试'));

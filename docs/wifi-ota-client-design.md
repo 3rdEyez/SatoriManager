@@ -1,6 +1,6 @@
-# 限时浏览器 OTA 与离线包预检
+# 局域网配网维护与浏览器 OTA
 
-App 0.2.6+8 已接入设置页升级入口、独立认证 BLE 扩展、状态确认和退出流程；内存 package 预检仍不验签或传输。没有添加文件选择器、App Wi-Fi 绑定、新 Android 权限或服务，没有生成正式密钥、刷入签名 seed 或在设备开网。本地闭环模拟不等于无线部署完成。
+App 0.2.7+9 已接入设置页升级入口、独立认证 BLE 扩展、状态确认和退出流程；内存 package 预检仍不验签或传输。没有添加文件选择器、App Wi-Fi 绑定、新 Android 权限或服务，没有生成正式密钥、刷入签名 seed 或在设备开网。本地闭环模拟不等于无线部署完成。
 
 ## 简化操作路径（实现/部署边界）
 
@@ -63,3 +63,15 @@ Android13+ 管理 Wi-Fi 需评估 `NEARBY_WIFI_DEVICES` runtime permission 和 `
 开窗首次await之前锁住自动恢复，也覆盖HALT中途掉线。维护断线不自动连接/ARM；用户可点“重新连接确认窗口状态”。认证连接先读维护状态，已有窗口跳过CLAIM/ARM，仅管理窗口；浏览器上传不依赖此连接。Closed真实确认后可“退出升级并重新连接”：断开、fresh CLAIM、保持暂停。禁自动ARM意图跨后续断线保留，直到用户明确启用控制成功；普通拍摄原有断线恢复规则保留。
 
 当前固件版本来自fresh DeviceInfo，未获得目标版本和启动验证不声称升级成功。可变长度BLE长读与OEM实机行为尚未测，部署时需验证。新增维护测试覆盖HALT断线、旧固件/未ready、丢ACK与超时、重复请求、迟到状态、提交拒取消、断线和freshCLAIM退出；UI测试覆盖连接资料与未知状态恢复入口。它们不代表设备网络或正式签名测试。
+
+## LAN 主路径（本地实现，部署仍需实测）
+
+设置页优先“连接网络并开启维护”：用户每窗输入 2.4GHz WPA2 个人网络 SSID 和密码，密码遮蔽显示、关闭输入法学习、提交即清空输入框。配置仅传入设备本次维护 RAM，不保存手机偏好或设备持久存储，结束清除；没有保存选项、扫描或自动复用旧凭据。电脑保留原网络，与设备同局域网，直接打开 BLE 实读的 IPv4 地址；页面填写窗口令牌，上传完整签名 .sota 包。隔离网络/访客网络可能无法访问，备用 AP 入口仍需明确开启。沿用旧 IP 直连概念，不恢复 UDP 控制或承诺发现扫描。
+
+独立认证 read/write UUID `4d89f6a0-73b9-4f14-9d3e-63b2145a0008`，不修改旧 DeviceInfo、Control v1.2 或能力位；缺少扩展时明确不支持并不发送配置。命令12字节头：schema1/action(openLAN1,close2)、requestId LE32、windowId LE32、SSID长度、密码长度，后接 UTF-8 SSID1..32字节及ASCII密码8..63字节。open windowId0；close非零当前windowId、两个长度0。拒绝open/WEP/64位hex密码。本地Android写前请求MTU256，未满足整个命令长度则停止，不分段冒充原子配置。
+
+状态24字节头：schema/state/result/detail、ACK requestId LE32、windowId LE32、remainingMs LE32、IPv4四个网络序字节、token长度、3个零reserved，后接令牌。state/result与AP相同；detail none0/invalid-config1/connect-timeout2/wifi-error3/lost-link4。仅Open/Uploading携带32位lowerhex令牌；连接中、失败及关闭不携带。Ready须真实设备Open、有效IP/windowId/令牌；写入或连接中不算联网。窗口120秒包含最多20秒连接阶段。open/close设备确认等待26秒，客户端45秒；连接中关闭可能等待有界连接结束，只有真实Closed才能退出。
+
+电脑地址不含令牌；上传使用 `X-Satori-Window` header。令牌不进入公共snapshot、偏好、日志或异常，仅匹配客户端和当前窗口的私有RAM响应/UI使用，断线/窗口变化清除。两个维护路径互斥，另一窗口活动或状态未知时不允许切路径，防止APClosed掩盖LAN仍开启。真实Closed后freshCLAIM仍暂停，不自动ARM。
+
+本地模拟覆盖配置字节界限、畸形状态、旧固件、真实Ready/连接失败、MTU拒绝、两路径互斥、凭据快照隔离和暂停退出。未进行真实BLE长写/读、局域网连通、浏览器上传或正式签名部署；本轮未新增Android权限、插件或网络服务。

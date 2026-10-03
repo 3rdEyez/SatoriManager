@@ -127,6 +127,7 @@ void main() {
       await tester.scrollUntilVisible(find.text('test-maintenance'), 150);
       expect(find.text('synthetic-password'), findsOneWidget);
       expect(find.text('http://192.168.4.1/'), findsOneWidget);
+      await tester.scrollUntilVisible(find.textContaining('上传不需要保持蓝牙'), 150);
       expect(find.textContaining('上传不需要保持蓝牙'), findsOneWidget);
       expect(find.textContaining('升级完成'), findsNothing);
     },

@@ -6,6 +6,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'core/control_status.dart';
 import 'infrastructure/reactive_ble_link.dart' show requestBlePermissions;
 import 'joystick_pad.dart';
+import 'wifi_setup_dialog.dart';
 import 'runtime/control_client.dart';
 import 'satori_palette.dart';
 
@@ -829,6 +830,39 @@ class _ControlShellState extends State<ControlShell>
     await _run(() => client.send('setPairingCode', {'code': code}));
   }
 
+  Future<void> _openLanMaintenance() async {
+    final input = await showDialog<WifiMaintenanceInput>(
+      context: context,
+      builder: (_) => const WifiSetupDialog(),
+    );
+    if (input == null || !mounted) return;
+    await _run(() async {
+      _automaticConnection = false;
+      await client.send('openLanWindow', {
+        'ssid': input.ssid,
+        'password': input.password,
+      });
+    });
+  }
+
+  String _lanStatusText(Map? status) {
+    if (status == null) return '局域网状态未确认';
+    if (status['result'] == 2) return '签名维护尚未就绪';
+    if (status['state'] == 1) return '正在连接Wi-Fi并启动维护服务…';
+    if (status['state'] == 2 || status['state'] == 3) return '已获得设备IP并开启维护';
+    if (status['state'] == 5) return '镜像已提交，等待重启后确认版本';
+    if (status['state'] == 6 || status['detail'] != 0) {
+      return switch (status['detail']) {
+        1 => 'Wi-Fi配置无效',
+        2 => '连接超时，请检查2.4GHz网络和密码',
+        3 => 'Wi-Fi启动失败',
+        4 => '局域网连接已丢失，维护已停止',
+        _ => '维护失败，请读取设备状态后重试',
+      };
+    }
+    return status['state'] == 0 ? '局域网维护未开启或已关闭' : '正在关闭维护…';
+  }
+
   Future<void> _openTransfer() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1007,6 +1041,63 @@ class _ControlShellState extends State<ControlShell>
       _section('固件升级'),
       const SizedBox(height: 10),
       Text(
+        '局域网升级（推荐）',
+        style: TextStyle(color: p.ink, fontWeight: FontWeight.w600),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        state['lanSupported'] == true
+            ? _lanStatusText(state['lanWindow'] as Map?)
+            : '此设备固件不支持局域网配网维护，需升级固件；不会发送网络配置。',
+        style: TextStyle(color: p.muted, fontSize: 13),
+      ),
+      const SizedBox(height: 8),
+      _outlinedAction(
+        '连接网络并开启维护',
+        Icons.wifi,
+        busy ||
+                state['otaBusy'] == true ||
+                state['lanSupported'] != true ||
+                state['lanWindow'] == null ||
+                state['lanWindow']?['result'] == 2 ||
+                state['lanWindow']?['state'] != 0 ||
+                (state['otaWindow']?['state'] ?? 0) != 0 ||
+                (state['otaMaintenance'] == true &&
+                    state['maintenancePath'] == 'ap')
+            ? null
+            : _openLanMaintenance,
+      ),
+      if (state['lanWindow'] != null &&
+          (state['lanWindow']['state'] == 2 ||
+              state['lanWindow']['state'] == 3)) ...[
+        _settingRow('电脑浏览器地址', '${state['lanWindow']['url']}'),
+        _settingRow(
+          '设备剩余时间',
+          '${((state['lanWindow']['remainingMs'] as num) / 1000).ceil()} 秒',
+        ),
+        Text(
+          '电脑保持原Wi-Fi，只需与设备处于同一局域网。打开以上地址，填写本窗口上传令牌并选择签名包。连接Wi-Fi不代表升级完成。',
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+        if (client.lanUploadToken != null) ...[
+          const SizedBox(height: 8),
+          const Text('上传令牌（仅当前窗口）'),
+          SelectableText(client.lanUploadToken!),
+        ] else
+          TextButton(
+            onPressed: busy
+                ? null
+                : () => _run(() => client.send('readLanUploadToken')),
+            child: const Text('读取本窗口上传令牌'),
+          ),
+      ],
+      const SizedBox(height: 16),
+      Text(
+        '备用设备热点（手动选择）',
+        style: TextStyle(color: p.ink, fontWeight: FontWeight.w600),
+      ),
+
+      Text(
         state['otaSupported'] != true
             ? (connected ? '当前固件不支持无线升级窗口。' : '未连接，窗口状态未确认。')
             : state['otaWindow']?['result'] == 2
@@ -1018,7 +1109,7 @@ class _ControlShellState extends State<ControlShell>
         const SizedBox(height: 8),
         Text(state['otaNotice'] as String, style: TextStyle(color: p.muted)),
       ],
-      if (state['otaSupported'] == true) ...[
+      if (state['otaSupported'] == true || state['lanSupported'] == true) ...[
         const SizedBox(height: 12),
         Wrap(
           spacing: 8,
@@ -1029,9 +1120,13 @@ class _ControlShellState extends State<ControlShell>
               Icons.system_update,
               busy ||
                       state['otaBusy'] == true ||
+                      state['otaSupported'] != true ||
                       state['otaWindow'] == null ||
                       state['otaWindow']?['result'] == 2 ||
-                      (state['otaWindow']?['state'] ?? 0) != 0
+                      (state['otaWindow']?['state'] ?? 0) != 0 ||
+                      (state['lanWindow']?['state'] ?? 0) != 0 ||
+                      (state['otaMaintenance'] == true &&
+                          state['maintenancePath'] == 'lan')
                   ? null
                   : () => _run(() async {
                       _automaticConnection = false;
@@ -1043,9 +1138,19 @@ class _ControlShellState extends State<ControlShell>
               Icons.close,
               busy ||
                       state['otaBusy'] == true ||
-                      state['otaWindow'] == null ||
-                      (state['otaWindow']?['windowId'] ?? 0) == 0 ||
-                      state['otaWindow']?['state'] == 5
+                      (state['maintenancePath'] == 'lan'
+                              ? state['lanWindow']
+                              : state['otaWindow']) ==
+                          null ||
+                      ((state['maintenancePath'] == 'lan'
+                                  ? state['lanWindow']
+                                  : state['otaWindow'])?['windowId'] ??
+                              0) ==
+                          0 ||
+                      (state['maintenancePath'] == 'lan'
+                              ? state['lanWindow']
+                              : state['otaWindow'])?['state'] ==
+                          5
                   ? null
                   : () => _run(() => client.send('closeOtaWindow')),
             ),
@@ -1055,7 +1160,10 @@ class _ControlShellState extends State<ControlShell>
                 Icons.bluetooth,
                 busy ||
                         state['otaBusy'] == true ||
-                        state['otaWindow']?['state'] != 0
+                        (state['maintenancePath'] == 'lan'
+                                ? state['lanWindow']
+                                : state['otaWindow'])?['state'] !=
+                            0
                     ? null
                     : () => _run(() => client.send('exitOtaMaintenance')),
               ),
@@ -1072,7 +1180,7 @@ class _ControlShellState extends State<ControlShell>
               : () => _run(() => client.send('reconnectOtaMaintenance')),
         ),
         Text(
-          '蓝牙断开不能证明窗口已关闭；重新连接只确认状态，不自动启用动作。',
+          '蓝牙断开不能证明维护已结束；重新连接只确认状态，不自动启用动作。',
           style: TextStyle(color: p.muted, fontSize: 13),
         ),
       ],
