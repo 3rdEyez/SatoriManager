@@ -10,6 +10,10 @@ enum BleLinkState { disconnected, connecting, connected }
 
 /// Small transport contract. Scanning, pairing and platform GATT setup live in
 /// the concrete adapter; this class owns the protocol and its single writer.
+class BleCharacteristicAbsent implements Exception {
+  const BleCharacteristicAbsent();
+}
+
 abstract class BleLink {
   Stream<BleLinkState> get connectionState;
   Future<void> connect(String id);
@@ -148,8 +152,11 @@ class DeviceSession {
   bool? lanSupported;
   LanWindowStatus? lanWindow;
   String? maintenancePath;
-  OtaWindowStatus? get activeMaintenanceWindow =>
-      maintenancePath == 'lan' ? lanWindow : otaWindow;
+  OtaWindowStatus? get activeMaintenanceWindow => maintenancePath == 'unknown'
+      ? null
+      : maintenancePath == 'lan'
+      ? lanWindow
+      : otaWindow;
   int? _lanReadGeneration;
   Timer? _lanRefresh;
 
@@ -169,9 +176,11 @@ class DeviceSession {
       lanWindow = LanWindowStatus.decode(raw);
       lanSupported = true;
       _emit(_copy());
-    } catch (_) {
+    } catch (error) {
       if (generation == _generation) {
-        if (probe) lanSupported = false;
+        if (probe) {
+          lanSupported = error is BleCharacteristicAbsent ? false : null;
+        }
         lanWindow = null;
         _emit(_copy());
       }
@@ -221,9 +230,11 @@ class DeviceSession {
       otaWindow = OtaWindowStatus.decode(raw);
       otaSupported = true;
       _emit(_copy());
-    } catch (_) {
+    } catch (error) {
       if (generation == _generation) {
-        if (probe) otaSupported = false;
+        if (probe) {
+          otaSupported = error is BleCharacteristicAbsent ? false : null;
+        }
         otaWindow =
             null; // A failed read never leaves credentials/status fresh.
         _emit(_copy());
@@ -246,6 +257,9 @@ class DeviceSession {
     String ssid = '',
     String password = '',
   }) async {
+    if (maintenancePath == 'unknown') {
+      throw StateError('维护状态未确认，请重新连接确认');
+    }
     final current = lan ? lanWindow : otaWindow;
     final other = lan ? otaWindow : lanWindow;
     if (open &&
@@ -461,6 +475,12 @@ class DeviceSession {
           const Duration(seconds: 1),
           (_) => refreshOtaWindow(),
         );
+      }
+      if (lanSupported == null || otaSupported == null) {
+        maintenancePath = 'unknown';
+        maintenanceMode = true;
+        _emit(_copy(phase: DeviceSessionPhase.maintenance, token: 0));
+        return; // Unknown optional reads must never grant control.
       }
       if ((lanWindow != null && !lanWindow!.isClosed) ||
           (otaWindow != null && !otaWindow!.isClosed)) {

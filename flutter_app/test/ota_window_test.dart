@@ -43,7 +43,7 @@ class WindowLink extends FakeBleLink {
   @override
   Future<List<int>> read(String uuid) async {
     if (uuid != OtaWindowStatus.uuid) return super.read(uuid);
-    if (!extension) throw StateError('Missing optional extension');
+    if (!extension) throw const BleCharacteristicAbsent();
     if (nextRead != null) {
       final pending = nextRead!;
       nextRead = null;

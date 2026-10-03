@@ -783,11 +783,17 @@ class ControlEngine {
   }
 
   Future<void> reconnectOtaMaintenance() async {
-    if (otaBusy || (connection != 'disconnected' && connection != 'failed')) {
+    final unknown = session.maintenancePath == 'unknown';
+    if (otaBusy ||
+        (!unknown && connection != 'disconnected' && connection != 'failed')) {
       throw StateError('当前不能重新连接');
     }
     final id = deviceId;
     if (id == null || !_otaResumeBlocked) throw StateError('没有可恢复的升级会话');
+    if (unknown) {
+      await session.disconnect();
+      connection = 'disconnected';
+    }
     await connect(
       id,
       expectedIdentity: _identity,

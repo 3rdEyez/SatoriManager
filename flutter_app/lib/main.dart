@@ -1048,7 +1048,9 @@ class _ControlShellState extends State<ControlShell>
       Text(
         state['lanSupported'] == true
             ? _lanStatusText(state['lanWindow'] as Map?)
-            : '此设备固件不支持局域网配网维护，需升级固件；不会发送网络配置。',
+            : state['lanSupported'] == false
+            ? '此设备固件不支持局域网配网维护，需升级固件；不会发送网络配置。'
+            : '局域网维护状态未确认，控制保持暂停；请重新连接确认。',
         style: TextStyle(color: p.muted, fontSize: 13),
       ),
       const SizedBox(height: 8),
@@ -1170,7 +1172,8 @@ class _ControlShellState extends State<ControlShell>
           ],
         ),
       ],
-      if (!connected && state['otaMaintenance'] == true) ...[
+      if ((!connected || state['maintenancePath'] == 'unknown') &&
+          state['otaMaintenance'] == true) ...[
         const SizedBox(height: 12),
         _outlinedAction(
           '重新连接确认窗口状态',

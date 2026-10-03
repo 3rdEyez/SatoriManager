@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../core/ble_protocol.dart';
 import '../core/device_session.dart';
 import '../core/lan_window.dart';
+import '../core/ota_window.dart';
 import 'ble_discovery.dart';
 
 /// Requests only the permissions needed by the current Android release.
@@ -208,8 +209,22 @@ class ReactiveBleLink implements BleLink, BleLargeWriteLink {
   }
 
   @override
-  Future<List<int>> read(String uuid) =>
-      ble.readCharacteristic(_characteristic(uuid));
+  Future<List<int>> read(String uuid) async {
+    if (uuid == OtaWindowStatus.uuid || uuid == LanWindowStatus.lanUuid) {
+      final id = _deviceId;
+      if (id == null) throw StateError('BLE link is not connected');
+      final services = await ble.getDiscoveredServices(id);
+      final exists = services.any(
+        (service) =>
+            service.id.toString().toLowerCase() == BleProtocol.serviceUuid &&
+            service.characteristics.any(
+              (c) => c.id.toString().toLowerCase() == uuid.toLowerCase(),
+            ),
+      );
+      if (!exists) throw const BleCharacteristicAbsent();
+    }
+    return ble.readCharacteristic(_characteristic(uuid));
+  }
 
   @override
   Future<void> write(String uuid, List<int> value) =>

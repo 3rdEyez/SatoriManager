@@ -11,6 +11,7 @@ import 'package:satori_manager/wifi_setup_dialog.dart';
 
 class LanLink extends FakeBleLink implements BleLargeWriteLink {
   bool extension = true, ready = true, rejectMtu = false, failWifi = false;
+  bool failLanRead = false, failApRead = false;
   int state = 0, ack = 0, window = 0, detail = 0, connectingReads = 0;
   final requests = <List<int>>[];
   final largeWrites = <int>[];
@@ -43,7 +44,8 @@ class LanLink extends FakeBleLink implements BleLargeWriteLink {
   @override
   Future<List<int>> read(String uuid) async {
     if (uuid == LanWindowStatus.lanUuid) {
-      if (!extension) throw StateError('Optional absent');
+      if (failLanRead) throw StateError('No reply');
+      if (!extension) throw const BleCharacteristicAbsent();
       if (state == 1 && --connectingReads <= 0) {
         state = failWifi ? 6 : 2;
         detail = failWifi ? 2 : 0;
@@ -51,6 +53,7 @@ class LanLink extends FakeBleLink implements BleLargeWriteLink {
       return status();
     }
     if (uuid == OtaWindowStatus.uuid) {
+      if (failApRead) throw StateError('No reply');
       final b = List<int>.filled(18, 0);
       b[0] = 1;
       b[2] = state == 0 ? 0 : 1;
@@ -161,6 +164,59 @@ void main() {
       }
       final closed = LanLink().status();
       expect(LanWindowStatus.decode(closed).toUiJson()['url'], isNull);
+    },
+  );
+  test(
+    'unknown LAN read with AP ClosedBusy never CLAIMs; both unknown stay paused',
+    () async {
+      for (final both in [false, true]) {
+        final link = LanLink()
+          ..state = 2
+          ..window = 61
+          ..failLanRead = true
+          ..failApRead = both;
+        final session = DeviceSession(link);
+        await session.connect('fake');
+        expect(session.lanSupported, isNull);
+        expect(session.maintenanceMode, isTrue);
+        expect(session.maintenancePath, 'unknown');
+        expect(
+          link.writes.where((b) => b[1] == BleOpcode.claim.value),
+          isEmpty,
+        );
+        await expectLater(session.arm(), throwsStateError);
+        await expectLater(session.changeOtaWindow(true), throwsStateError);
+        await expectLater(session.changeOtaWindow(false), throwsStateError);
+        expect(session.activeMaintenanceWindow, isNull);
+        expect(session.maintenancePath, 'unknown');
+        expect(link.arms, 0);
+        await session.dispose();
+        await link.dispose();
+      }
+    },
+  );
+  test(
+    'connected unknown can reconnect to actual LAN window without ARM',
+    () async {
+      final link = LanLink()
+        ..state = 2
+        ..window = 61
+        ..failLanRead = true;
+      final session = DeviceSession(link);
+      final engine = ControlEngine(session, {});
+      addTearDown(() async {
+        await engine.dispose();
+        await link.dispose();
+      });
+      await engine.connect('fake');
+      expect(engine.otaMaintenance, isTrue);
+      await expectLater(engine.exitOtaMaintenance(), throwsStateError);
+      link.failLanRead = false;
+      await engine.reconnectOtaMaintenance();
+      expect(session.maintenancePath, 'lan');
+      expect(session.lanWindow?.isOpen, isTrue);
+      expect(link.arms, 0);
+      expect(link.writes.where((b) => b[1] == BleOpcode.claim.value), isEmpty);
     },
   );
   test(

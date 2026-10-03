@@ -75,3 +75,5 @@ Android13+ 管理 Wi-Fi 需评估 `NEARBY_WIFI_DEVICES` runtime permission 和 `
 电脑地址不含令牌；上传使用 `X-Satori-Window` header。令牌不进入公共snapshot、偏好、日志或异常，仅匹配客户端和当前窗口的私有RAM响应/UI使用，断线/窗口变化清除。两个维护路径互斥，另一窗口活动或状态未知时不允许切路径，防止APClosed掩盖LAN仍开启。真实Closed后freshCLAIM仍暂停，不自动ARM。
 
 本地模拟覆盖配置字节界限、畸形状态、旧固件、真实Ready/连接失败、MTU拒绝、两路径互斥、凭据快照隔离和暂停退出。未进行真实BLE长写/读、局域网连通、浏览器上传或正式签名部署；本轮未新增Android权限、插件或网络服务。
+
+扩展发现使用当前连接GATT列表：仅明确缺失UUID视为不支持；读取超时、断线或格式失败视为未知。连接阶段任一维护扩展未知均进入暂停维护，不发送CLAIM/ARM，也不能开、关或退出冒充另一Closed路径。界面提供重新连接确认，重新发现并读取真实状态后再管理窗口；不依据固件patch猜能力。SSID与固件同样拒绝ASCII控制字节及DEL，保留其余UTF-8原始字节。
