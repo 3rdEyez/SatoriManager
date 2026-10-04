@@ -79,7 +79,7 @@ def main(argv=None):
     parser.add_argument('--execute', action='store_true')
     args = parser.parse_args(argv)
     try:
-        profiles = list(dict.fromkeys(args.profile or ['ble_primary', 'legacy_udp']))
+        profiles = list(dict.fromkeys(args.profile or ['ble_wifi_ota_prototype']))
         files = public_files(args.firmware_root.absolute(), args.apk, profiles)
         if not args.execute:
             print(json.dumps({'offline_plan': True, 'bundle_written': False,
