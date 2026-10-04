@@ -23,7 +23,7 @@ class LanWindowStatus extends OtaWindowStatus {
         b[0] != 1 ||
         b[1] > 6 ||
         b[2] > 6 ||
-        b[3] > 4 ||
+        b[3] > 6 ||
         (b[20] != 0 && b[20] != 32) ||
         b.length != 24 + b[20] ||
         b.sublist(21, 24).any((v) => v != 0)) {
@@ -67,12 +67,26 @@ class LanWindowStatus extends OtaWindowStatus {
     required int windowId,
     String ssid = '',
     String password = '',
+    bool useSavedNetwork = false,
+    bool rememberNetwork = false,
   }) {
     final prefix = OtaWindowStatus.request(
       open: open,
       requestId: requestId,
       windowId: windowId,
     );
+    if (useSavedNetwork) {
+      if (!open || rememberNetwork || ssid.isNotEmpty || password.isNotEmpty) {
+        throw const FormatException(
+          'Saved network requires credential-free OPEN',
+        );
+      }
+      return [2, ...prefix.skip(1), 0, 0];
+    }
+    if (rememberNetwork && !open) {
+      throw const FormatException("Cannot remember on CLOSE");
+    }
+    if (rememberNetwork) prefix[0] = 3;
     final ssidBytes = utf8.encode(ssid), passwordBytes = password.codeUnits;
     if (open
         ? (ssidBytes.isEmpty ||

@@ -238,6 +238,11 @@ class _ControlShellState extends State<ControlShell>
     _automaticConnection = false;
     try {
       await client.send('disconnect');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已结束控制。请关闭觉瞳实体电源；软件暂停不等于断电。')),
+        );
+      }
     } catch (error) {
       _showError(error);
     }
@@ -833,12 +838,15 @@ class _ControlShellState extends State<ControlShell>
   Future<void> _openLanMaintenance() async {
     final input = await showDialog<WifiMaintenanceInput>(
       context: context,
-      builder: (_) => const WifiSetupDialog(),
+      builder: (_) => WifiSetupDialog(
+        canRememberNetwork: client.state["supportsSavedNetwork"] == true,
+      ),
     );
     if (input == null || !mounted) return;
     await _run(() async {
       _automaticConnection = false;
       await client.send('openLanWindow', {
+        'rememberNetwork': input.rememberNetwork,
         'ssid': input.ssid,
         'password': input.password,
       });
@@ -857,6 +865,8 @@ class _ControlShellState extends State<ControlShell>
         2 => '连接超时，请检查2.4GHz网络和密码',
         3 => 'Wi-Fi启动失败',
         4 => '局域网连接已丢失，维护已停止',
+        5 => '没有可用的已记住网络，请重新配网',
+        6 => '保存结果未确认，维护已关闭；请读取保存状态或重新配网',
         _ => '维护失败，请读取设备状态后重试',
       };
     }
@@ -1055,7 +1065,7 @@ class _ControlShellState extends State<ControlShell>
       ),
       const SizedBox(height: 8),
       _outlinedAction(
-        '连接网络并开启维护',
+        '配网或更换网络',
         Icons.wifi,
         busy ||
                 state['otaBusy'] == true ||
@@ -1069,12 +1079,34 @@ class _ControlShellState extends State<ControlShell>
             ? null
             : _openLanMaintenance,
       ),
+      if (state['supportsSavedNetwork'] == true &&
+          state['hasSavedNetwork'] == true)
+        _outlinedAction(
+          '使用已记住网络开启升级',
+          Icons.system_update,
+          busy ||
+                  state['otaBusy'] == true ||
+                  state['lanSupported'] != true ||
+                  state['lanWindow']?['state'] != 0 ||
+                  (state['otaWindow']?['state'] ?? 0) != 0 ||
+                  state['maintenancePath'] == 'unknown'
+              ? null
+              : () => _run(() async {
+                  _automaticConnection = false;
+                  await client.send('openLanWindow', {'useSavedNetwork': true});
+                }),
+        ),
+      Text(
+        state['supportsSavedNetwork'] == true
+            ? '维护空闲十分钟后关闭，可主动关闭；上传有独立时限。关闭维护后动作保持暂停。'
+            : '当前维护期限以设备剩余时间为准，可主动关闭；关闭后动作保持暂停。',
+      ),
       if (state['lanWindow'] != null &&
           (state['lanWindow']['state'] == 2 ||
               state['lanWindow']['state'] == 3)) ...[
         _settingRow('电脑浏览器地址', '${state['lanWindow']['url']}'),
         _settingRow(
-          '设备剩余时间',
+          '当前阶段剩余时间',
           '${((state['lanWindow']['remainingMs'] as num) / 1000).ceil()} 秒',
         ),
         Text(
@@ -1100,8 +1132,10 @@ class _ControlShellState extends State<ControlShell>
       ),
 
       Text(
-        state['otaSupported'] != true
-            ? (connected ? '当前固件不支持无线升级窗口。' : '未连接，窗口状态未确认。')
+        state['otaSupported'] == null
+            ? '备用热点维护状态未确认，控制保持暂停；请重新连接确认。'
+            : state['otaSupported'] == false
+            ? '当前固件不支持无线升级窗口。'
             : state['otaWindow']?['result'] == 2
             ? '签名升级尚未就绪，暂不能开启窗口。'
             : '主动开启限时窗口后，手动连接设备 Wi-Fi，用任意浏览器上传 .sota 签名包。',
@@ -1195,7 +1229,7 @@ class _ControlShellState extends State<ControlShell>
         _settingRow('临时密码', '${state['otaWindow']['password']}'),
         _settingRow('浏览器地址', 'http://192.168.4.1/'),
         _settingRow(
-          '设备剩余时间',
+          '当前阶段剩余时间',
           '${((state['otaWindow']['remainingMs'] as num) / 1000).ceil()} 秒',
         ),
         Text(

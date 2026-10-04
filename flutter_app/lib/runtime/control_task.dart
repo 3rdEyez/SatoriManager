@@ -233,8 +233,10 @@ class ControlTask extends TaskHandler {
         case 'openLanWindow':
           await active.openOtaWindow(
             lan: true,
-            ssid: data['ssid'] as String,
-            password: data['password'] as String,
+            ssid: data['ssid'] as String? ?? '',
+            password: data['password'] as String? ?? '',
+            useSavedNetwork: data['useSavedNetwork'] == true,
+            rememberNetwork: data['rememberNetwork'] == true,
             ensureCurrentClient: ensureCurrentClient,
           );
         case 'readLanUploadToken':

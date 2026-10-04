@@ -150,6 +150,27 @@ class DeviceSession {
   bool? otaSupported;
   OtaWindowStatus? otaWindow;
   bool? lanSupported;
+  bool supportsSavedNetwork = false, hasSavedNetwork = false;
+  static const savedNetworkUuid = "4d89f6a0-73b9-4f14-9d3e-63b2145a0009";
+  Future<void> refreshSavedNetwork() async {
+    final generation = _generation;
+    try {
+      final b = await link.read(savedNetworkUuid).timeout(commandTimeout);
+      _checkGeneration(generation);
+      if (b.length != 4 || b[0] != 1 || b[1] != 3 || b[2] > 1 || b[3] != 0) {
+        throw const FormatException("Invalid optional network feature");
+      }
+      supportsSavedNetwork = true;
+      hasSavedNetwork = b[2] == 1;
+    } catch (_) {
+      if (generation == _generation) {
+        supportsSavedNetwork = false;
+        hasSavedNetwork = false;
+      }
+    }
+    if (generation == _generation) _emit(_copy());
+  }
+
   LanWindowStatus? lanWindow;
   String? maintenancePath;
   OtaWindowStatus? get activeMaintenanceWindow => maintenancePath == 'unknown'
@@ -193,8 +214,16 @@ class DeviceSession {
     bool open, {
     String ssid = '',
     String password = '',
+    bool useSavedNetwork = false,
+    bool rememberNetwork = false,
   }) {
     if (_otaOperation != null) return Future.error(StateError('升级操作正在进行'));
+    if (useSavedNetwork && supportsSavedNetwork != true) {
+      return Future.error(StateError('当前固件不支持使用已保存网络'));
+    }
+    if (rememberNetwork && !supportsSavedNetwork) {
+      return Future.error(StateError("固件不支持记住网络"));
+    }
     // Validate locally without mutating the session or sending credentials.
     LanWindowStatus.lanRequest(
       open: open,
@@ -202,13 +231,20 @@ class DeviceSession {
       windowId: open ? 0 : (lanWindow?.windowId ?? 0),
       ssid: ssid,
       password: password,
+      useSavedNetwork: useSavedNetwork,
+      rememberNetwork: rememberNetwork,
     );
-    return _otaOperation = _changeOtaWindow(
-      open,
-      lan: true,
-      ssid: ssid,
-      password: password,
-    ).whenComplete(() => _otaOperation = null);
+    return _otaOperation =
+        _changeOtaWindow(
+              open,
+              lan: true,
+              ssid: ssid,
+              password: password,
+              useSavedNetwork: useSavedNetwork,
+              rememberNetwork: rememberNetwork,
+            )
+            .whenComplete(() => refreshSavedNetwork())
+            .whenComplete(() => _otaOperation = null);
   }
 
   Timer? _otaRefresh;
@@ -256,6 +292,8 @@ class DeviceSession {
     bool lan = false,
     String ssid = '',
     String password = '',
+    bool useSavedNetwork = false,
+    bool rememberNetwork = false,
   }) async {
     if (maintenancePath == 'unknown') {
       throw StateError('维护状态未确认，请重新连接确认');
@@ -302,6 +340,8 @@ class DeviceSession {
             windowId: window,
             ssid: ssid,
             password: password,
+            useSavedNetwork: useSavedNetwork,
+            rememberNetwork: rememberNetwork,
           )
         : OtaWindowStatus.request(open: open, requestId: id, windowId: window);
     final uuid = lan ? LanWindowStatus.lanUuid : OtaWindowStatus.uuid;
@@ -460,6 +500,8 @@ class DeviceSession {
           );
       _emit(_copy(identity: identity, deviceInfo: info));
       _emit(_copy(phase: DeviceSessionPhase.claiming));
+      await refreshSavedNetwork();
+      _checkGeneration(generation);
       await refreshLanWindow(probe: true);
       _checkGeneration(generation);
       if (lanSupported == true) {
@@ -1074,6 +1116,8 @@ class DeviceSession {
     _otaRefresh?.cancel();
     _lanRefresh?.cancel();
     lanWindow = null;
+    supportsSavedNetwork = false;
+    hasSavedNetwork = false;
     otaWindow = null;
     _clearPending();
     cancelPendingTargets();
@@ -1098,6 +1142,8 @@ class DeviceSession {
     _otaRefresh?.cancel();
     _lanRefresh?.cancel();
     lanWindow = null;
+    supportsSavedNetwork = false;
+    hasSavedNetwork = false;
     otaWindow = null;
     _generation++;
     _keepalive?.cancel();

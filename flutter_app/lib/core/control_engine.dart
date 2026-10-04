@@ -87,10 +87,12 @@ class ControlEngine {
           ((s.deviceInfo?.capabilities ?? 0) & 0x80) != 0,
       'supportsSharedPairing': s.deviceInfo?.supportsSharedPairing ?? false,
       'pairingNotice': pairingNotice,
-      'lanSupported': s.isConnected && session.lanSupported == true,
+      'supportsSavedNetwork': s.isConnected && session.supportsSavedNetwork,
+      'hasSavedNetwork': s.isConnected && session.hasSavedNetwork,
+      'lanSupported': s.isConnected ? session.lanSupported : null,
       'lanWindow': s.isConnected ? session.lanWindow?.toUiJson() : null,
       'maintenancePath': session.maintenancePath,
-      'otaSupported': s.isConnected && session.otaSupported == true,
+      'otaSupported': s.isConnected ? session.otaSupported : null,
       'otaWindow': s.isConnected ? session.otaWindow?.toUiJson() : null,
       'otaMaintenance': otaMaintenance,
       'otaBusy': otaBusy,
@@ -718,12 +720,18 @@ class ControlEngine {
     bool lan = false,
     String ssid = '',
     String password = '',
+    bool useSavedNetwork = false,
+    bool rememberNetwork = false,
     void Function()? ensureCurrentClient,
   }) async {
     if (otaBusy) throw StateError('升级操作正在进行');
     if ((lan ? session.lanSupported : session.otaSupported) != true ||
         connection != 'connected') {
       throw StateError('当前固件不支持无线升级窗口');
+    }
+    if ((useSavedNetwork || rememberNetwork) &&
+        (!lan || !session.supportsSavedNetwork)) {
+      throw StateError('固件不支持已保存网络');
     }
     otaBusy = true;
     _otaResumeBlocked = true;
@@ -740,7 +748,13 @@ class ControlEngine {
       _reconnect?.cancel();
       ensureCurrentClient?.call();
       if (lan) {
-        await session.changeLanWindow(true, ssid: ssid, password: password);
+        await session.changeLanWindow(
+          true,
+          ssid: ssid,
+          password: password,
+          useSavedNetwork: useSavedNetwork,
+          rememberNetwork: rememberNetwork,
+        );
       } else {
         await session.changeOtaWindow(true);
       }

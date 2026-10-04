@@ -12,6 +12,7 @@ import 'package:satori_manager/wifi_setup_dialog.dart';
 class LanLink extends FakeBleLink implements BleLargeWriteLink {
   bool extension = true, ready = true, rejectMtu = false, failWifi = false;
   bool failLanRead = false, failApRead = false;
+  bool savedExtension = false, saved = false, failAfterSave = false;
   int state = 0, ack = 0, window = 0, detail = 0, connectingReads = 0;
   final requests = <List<int>>[];
   final largeWrites = <int>[];
@@ -43,11 +44,15 @@ class LanLink extends FakeBleLink implements BleLargeWriteLink {
 
   @override
   Future<List<int>> read(String uuid) async {
+    if (uuid == DeviceSession.savedNetworkUuid) {
+      if (!savedExtension) throw const BleCharacteristicAbsent();
+      return [1, 3, saved ? 1 : 0, 0];
+    }
     if (uuid == LanWindowStatus.lanUuid) {
       if (failLanRead) throw StateError('No reply');
       if (!extension) throw const BleCharacteristicAbsent();
       if (state == 1 && --connectingReads <= 0) {
-        state = failWifi ? 6 : 2;
+        state = failWifi || failAfterSave ? 6 : 2;
         detail = failWifi ? 2 : 0;
       }
       return status();
@@ -71,6 +76,7 @@ class LanLink extends FakeBleLink implements BleLargeWriteLink {
     if (ack == u32(2)) return;
     ack = u32(2);
     if (bytes[1] == 1) {
+      if (bytes[0] == 3 && !failWifi) saved = true;
       state = 1;
       window = 61;
       connectingReads = 3;
@@ -84,6 +90,169 @@ class LanLink extends FakeBleLink implements BleLargeWriteLink {
 }
 
 void main() {
+  test('explicit temporary remember and saved wire', () {
+    List<int> request({bool remember = false, bool saved = false}) =>
+        LanWindowStatus.lanRequest(
+          open: true,
+          requestId: 1,
+          windowId: 0,
+          ssid: saved ? '' : 'synthetic-net',
+          password: saved ? '' : 'synthetic-password',
+          rememberNetwork: remember,
+          useSavedNetwork: saved,
+        );
+    expect(request()[0], 1);
+    expect(request(remember: true)[0], 3);
+    expect(request(saved: true), [2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(() => request(remember: true, saved: true), throwsFormatException);
+  });
+  test('optional feature leaves old DeviceInfo compatible', () async {
+    for (final present in [false, true]) {
+      final link = LanLink()..savedExtension = present;
+      final session = DeviceSession(link);
+      await session.connect('fake');
+      expect(session.supportsSavedNetwork, present);
+      expect(session.snapshot.deviceInfo!.capabilities & ~0x1ff, 0);
+      if (!present) {
+        await expectLater(
+          session.changeLanWindow(
+            true,
+            ssid: 'synthetic-net',
+            password: 'synthetic-password',
+            rememberNetwork: true,
+          ),
+          throwsStateError,
+        );
+        expect(link.requests, isEmpty);
+      }
+      await session.dispose();
+      await link.dispose();
+    }
+  });
+  test('remember and explicitly reopen with no credentials or ARM', () async {
+    final link = LanLink()..savedExtension = true;
+    final session = DeviceSession(link);
+    await session.connect('fake');
+    await session.changeLanWindow(
+      true,
+      ssid: 'synthetic-net',
+      password: 'synthetic-password',
+      rememberNetwork: true,
+    );
+    expect(link.requests.single[0], 3);
+    expect(session.hasSavedNetwork, isTrue);
+    await session.changeLanWindow(false);
+    await session.changeLanWindow(true, useSavedNetwork: true);
+    expect(link.requests.last.length, 12);
+    expect(link.requests.last[0], 2);
+    expect(link.arms, 0);
+    await session.dispose();
+    await link.dispose();
+  });
+  test('temporary network does not set saved metadata', () async {
+    final link = LanLink()..savedExtension = true;
+    final session = DeviceSession(link);
+    await session.connect('fake');
+    await session.changeLanWindow(
+      true,
+      ssid: 'synthetic-net',
+      password: 'synthetic-password',
+    );
+    expect(link.saved, isFalse);
+    expect(session.hasSavedNetwork, isFalse);
+    expect(link.requests.single[0], 1);
+    await session.dispose();
+    await link.dispose();
+  });
+  test('saved metadata refreshes after later HTTP failure', () async {
+    final link = LanLink()
+      ..savedExtension = true
+      ..failAfterSave = true;
+    final session = DeviceSession(link);
+    await session.connect('fake');
+    await expectLater(
+      session.changeLanWindow(
+        true,
+        ssid: 'synthetic-net',
+        password: 'synthetic-password',
+        rememberNetwork: true,
+      ),
+      throwsStateError,
+    );
+    expect(session.hasSavedNetwork, isTrue);
+    expect(link.arms, 0);
+    await session.dispose();
+    await link.dispose();
+  });
+  testWidgets('remember choice defaults off and is explicit', (tester) async {
+    WifiMaintenanceInput? input;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              input = await showDialog<WifiMaintenanceInput>(
+                context: context,
+                builder: (_) => const WifiSetupDialog(canRememberNetwork: true),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isFalse,
+    );
+    await tester.enterText(find.byType(TextField).at(0), 'synthetic-net');
+    await tester.enterText(find.byType(TextField).at(1), 'synthetic-password');
+    await tester.tap(find.text('记住此网络'));
+    await tester.pump();
+    await tester.tap(find.text('连接网络并开启维护'));
+    await tester.pumpAndSettle();
+    expect(input?.rememberNetwork, isTrue);
+    expect(find.text('synthetic-password'), findsNothing);
+  });
+
+  test(
+    'engine snapshots preserve unknown capability and disconnected state',
+    () async {
+      for (final failAp in [false, true]) {
+        final link = LanLink()
+          ..failLanRead = true
+          ..failApRead = failAp;
+        final session = DeviceSession(link);
+        final engine = ControlEngine(session, {});
+        await engine.connect('fake');
+        expect(engine.snapshot()['lanSupported'], isNull);
+        expect(engine.snapshot()['otaSupported'], failAp ? isNull : isTrue);
+        expect(engine.snapshot()['maintenancePath'], 'unknown');
+        expect(engine.outputAuthorized, false);
+        expect(
+          link.writes.where(
+            (b) => b[1] == BleOpcode.claim.value || b[1] == BleOpcode.arm.value,
+          ),
+          isEmpty,
+        );
+        await engine.disconnect();
+        expect(engine.snapshot()['lanSupported'], isNull);
+        expect(engine.snapshot()['otaSupported'], isNull);
+        await engine.dispose();
+        await link.dispose();
+      }
+      final link = LanLink()..extension = false;
+      final session = DeviceSession(link);
+      final engine = ControlEngine(session, {});
+      await engine.connect('fake');
+      expect(engine.snapshot()['lanSupported'], false);
+      expect(engine.snapshot()['otaSupported'], true);
+      await engine.dispose();
+      await link.dispose();
+    },
+  );
   test('UTF8 SSID bytes and ASCII WPA2 password validate exact request', () {
     final wire = LanWindowStatus.lanRequest(
       open: true,
@@ -157,7 +326,7 @@ void main() {
         [...raw]..[16] = 239,
         [...raw]..[21] = 1,
         [...raw]..[24] = 0x41,
-        [...raw]..[3] = 5,
+        [...raw]..[3] = 7,
         [...raw, 0],
       ]) {
         expect(() => LanWindowStatus.decode(bad), throwsFormatException);
