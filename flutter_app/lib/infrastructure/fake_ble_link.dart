@@ -225,7 +225,7 @@ class FakeBleLink implements BleLink {
         validChannelMask: _validMask,
       );
     }
-    throw StateError('Unknown characteristic $uuid');
+    throw const BleCharacteristicAbsent();
   }
 
   @override

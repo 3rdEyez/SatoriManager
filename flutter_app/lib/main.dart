@@ -6,6 +6,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'core/control_status.dart';
 import 'infrastructure/reactive_ble_link.dart' show requestBlePermissions;
 import 'joystick_pad.dart';
+import 'wifi_setup_dialog.dart';
 import 'runtime/control_client.dart';
 import 'satori_palette.dart';
 
@@ -237,6 +238,11 @@ class _ControlShellState extends State<ControlShell>
     _automaticConnection = false;
     try {
       await client.send('disconnect');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已结束控制。请关闭觉瞳实体电源；软件暂停不等于断电。')),
+        );
+      }
     } catch (error) {
       _showError(error);
     }
@@ -393,9 +399,13 @@ class _ControlShellState extends State<ControlShell>
               ),
               const SizedBox(width: 3),
               Tooltip(
-                message: stale ? '电量数据已超过 1 分钟' : '设备电量',
+                message: battery == null
+                    ? '设备未提供电量采样'
+                    : stale
+                    ? '电量数据已超过 1 分钟'
+                    : '设备电量',
                 child: Text(
-                  battery == null ? '—' : '$battery%',
+                  battery == null ? '未知' : '$battery%',
                   style: TextStyle(
                     fontSize: 11,
                     color: p.ink,
@@ -683,6 +693,20 @@ class _ControlShellState extends State<ControlShell>
           ),
         ),
       ],
+      if (connected || state['connection'] == 'reconnecting') ...[
+        const SizedBox(height: 12),
+        Center(
+          child: TextButton.icon(
+            onPressed: busy ? null : _disconnect,
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: const Text('结束拍摄'),
+          ),
+        ),
+        Text(
+          '停止动作并释放控制；设备仍需用电源开关关闭。',
+          style: TextStyle(color: p.muted, fontSize: 12),
+        ),
+      ],
     ]);
   }
 
@@ -811,6 +835,44 @@ class _ControlShellState extends State<ControlShell>
     await _run(() => client.send('setPairingCode', {'code': code}));
   }
 
+  Future<void> _openLanMaintenance() async {
+    final input = await showDialog<WifiMaintenanceInput>(
+      context: context,
+      builder: (_) => WifiSetupDialog(
+        canRememberNetwork: client.state["supportsSavedNetwork"] == true,
+      ),
+    );
+    if (input == null || !mounted) return;
+    await _run(() async {
+      _automaticConnection = false;
+      await client.send('openLanWindow', {
+        'rememberNetwork': input.rememberNetwork,
+        'ssid': input.ssid,
+        'password': input.password,
+      });
+    });
+  }
+
+  String _lanStatusText(Map? status) {
+    if (status == null) return '局域网状态未确认';
+    if (status['result'] == 2) return '签名维护尚未就绪';
+    if (status['state'] == 1) return '正在连接Wi-Fi并启动维护服务…';
+    if (status['state'] == 2 || status['state'] == 3) return '已获得设备IP并开启维护';
+    if (status['state'] == 5) return '镜像已提交，等待重启后确认版本';
+    if (status['state'] == 6 || status['detail'] != 0) {
+      return switch (status['detail']) {
+        1 => 'Wi-Fi配置无效',
+        2 => '连接超时，请检查2.4GHz网络和密码',
+        3 => 'Wi-Fi启动失败',
+        4 => '局域网连接已丢失，维护已停止',
+        5 => '没有可用的已记住网络，请重新配网',
+        6 => '保存结果未确认，维护已关闭；请读取保存状态或重新配网',
+        _ => '维护失败，请读取设备状态后重试',
+      };
+    }
+    return status['state'] == 0 ? '局域网维护未开启或已关闭' : '正在关闭维护…';
+  }
+
   Future<void> _openTransfer() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -908,11 +970,16 @@ class _ControlShellState extends State<ControlShell>
         SizedBox(
           width: double.infinity,
           child: _outlinedAction(
-            '断开控制会话',
+            '结束拍摄',
             Icons.link_off_rounded,
             busy ? null : _disconnect,
             danger: true,
           ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '停止自动动作并释放控制。设备仍需用电源开关关闭。',
+          style: TextStyle(color: p.muted, fontSize: 12),
         ),
       ] else ...[
         const SizedBox(height: 16),
@@ -981,6 +1048,196 @@ class _ControlShellState extends State<ControlShell>
         ),
       ],
       const SizedBox(height: 20),
+      _section('固件升级'),
+      const SizedBox(height: 10),
+      Text(
+        '局域网升级（推荐）',
+        style: TextStyle(color: p.ink, fontWeight: FontWeight.w600),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        state['lanSupported'] == true
+            ? _lanStatusText(state['lanWindow'] as Map?)
+            : state['lanSupported'] == false
+            ? '此设备固件不支持局域网配网维护，需升级固件；不会发送网络配置。'
+            : '局域网维护状态未确认，控制保持暂停；请重新连接确认。',
+        style: TextStyle(color: p.muted, fontSize: 13),
+      ),
+      const SizedBox(height: 8),
+      _outlinedAction(
+        '配网或更换网络',
+        Icons.wifi,
+        busy ||
+                state['otaBusy'] == true ||
+                state['lanSupported'] != true ||
+                state['lanWindow'] == null ||
+                state['lanWindow']?['result'] == 2 ||
+                state['lanWindow']?['state'] != 0 ||
+                (state['otaWindow']?['state'] ?? 0) != 0 ||
+                (state['otaMaintenance'] == true &&
+                    state['maintenancePath'] == 'ap')
+            ? null
+            : _openLanMaintenance,
+      ),
+      if (state['supportsSavedNetwork'] == true &&
+          state['hasSavedNetwork'] == true)
+        _outlinedAction(
+          '使用已记住网络开启升级',
+          Icons.system_update,
+          busy ||
+                  state['otaBusy'] == true ||
+                  state['lanSupported'] != true ||
+                  state['lanWindow']?['state'] != 0 ||
+                  (state['otaWindow']?['state'] ?? 0) != 0 ||
+                  state['maintenancePath'] == 'unknown'
+              ? null
+              : () => _run(() async {
+                  _automaticConnection = false;
+                  await client.send('openLanWindow', {'useSavedNetwork': true});
+                }),
+        ),
+      Text(
+        state['supportsSavedNetwork'] == true
+            ? '维护空闲十分钟后关闭，可主动关闭；上传有独立时限。关闭维护后动作保持暂停。'
+            : '当前维护期限以设备剩余时间为准，可主动关闭；关闭后动作保持暂停。',
+      ),
+      if (state['lanWindow'] != null &&
+          (state['lanWindow']['state'] == 2 ||
+              state['lanWindow']['state'] == 3)) ...[
+        _settingRow('电脑浏览器地址', '${state['lanWindow']['url']}'),
+        _settingRow(
+          '当前阶段剩余时间',
+          '${((state['lanWindow']['remainingMs'] as num) / 1000).ceil()} 秒',
+        ),
+        Text(
+          '电脑保持原Wi-Fi，只需与设备处于同一局域网。打开以上地址，填写本窗口上传令牌并选择签名包。连接Wi-Fi不代表升级完成。',
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+        if (client.lanUploadToken != null) ...[
+          const SizedBox(height: 8),
+          const Text('上传令牌（仅当前窗口）'),
+          SelectableText(client.lanUploadToken!),
+        ] else
+          TextButton(
+            onPressed: busy
+                ? null
+                : () => _run(() => client.send('readLanUploadToken')),
+            child: const Text('读取本窗口上传令牌'),
+          ),
+      ],
+      const SizedBox(height: 16),
+      Text(
+        '备用设备热点（手动选择）',
+        style: TextStyle(color: p.ink, fontWeight: FontWeight.w600),
+      ),
+
+      Text(
+        state['otaSupported'] == null
+            ? '备用热点维护状态未确认，控制保持暂停；请重新连接确认。'
+            : state['otaSupported'] == false
+            ? '当前固件不支持无线升级窗口。'
+            : state['otaWindow']?['result'] == 2
+            ? '签名升级尚未就绪，暂不能开启窗口。'
+            : '主动开启限时窗口后，手动连接设备 Wi-Fi，用任意浏览器上传 .sota 签名包。',
+        style: TextStyle(color: p.muted, fontSize: 13),
+      ),
+      if (state['otaNotice'] is String) ...[
+        const SizedBox(height: 8),
+        Text(state['otaNotice'] as String, style: TextStyle(color: p.muted)),
+      ],
+      if (state['otaSupported'] == true || state['lanSupported'] == true) ...[
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _outlinedAction(
+              '开启升级窗口',
+              Icons.system_update,
+              busy ||
+                      state['otaBusy'] == true ||
+                      state['otaSupported'] != true ||
+                      state['otaWindow'] == null ||
+                      state['otaWindow']?['result'] == 2 ||
+                      (state['otaWindow']?['state'] ?? 0) != 0 ||
+                      (state['lanWindow']?['state'] ?? 0) != 0 ||
+                      (state['otaMaintenance'] == true &&
+                          state['maintenancePath'] == 'lan')
+                  ? null
+                  : () => _run(() async {
+                      _automaticConnection = false;
+                      await client.send('openOtaWindow');
+                    }),
+            ),
+            _outlinedAction(
+              '关闭升级窗口',
+              Icons.close,
+              busy ||
+                      state['otaBusy'] == true ||
+                      (state['maintenancePath'] == 'lan'
+                              ? state['lanWindow']
+                              : state['otaWindow']) ==
+                          null ||
+                      ((state['maintenancePath'] == 'lan'
+                                  ? state['lanWindow']
+                                  : state['otaWindow'])?['windowId'] ??
+                              0) ==
+                          0 ||
+                      (state['maintenancePath'] == 'lan'
+                              ? state['lanWindow']
+                              : state['otaWindow'])?['state'] ==
+                          5
+                  ? null
+                  : () => _run(() => client.send('closeOtaWindow')),
+            ),
+            if (state['otaMaintenance'] == true)
+              _outlinedAction(
+                '退出升级并重新连接',
+                Icons.bluetooth,
+                busy ||
+                        state['otaBusy'] == true ||
+                        (state['maintenancePath'] == 'lan'
+                                ? state['lanWindow']
+                                : state['otaWindow'])?['state'] !=
+                            0
+                    ? null
+                    : () => _run(() => client.send('exitOtaMaintenance')),
+              ),
+          ],
+        ),
+      ],
+      if ((!connected || state['maintenancePath'] == 'unknown') &&
+          state['otaMaintenance'] == true) ...[
+        const SizedBox(height: 12),
+        _outlinedAction(
+          '重新连接确认窗口状态',
+          Icons.bluetooth_searching,
+          busy
+              ? null
+              : () => _run(() => client.send('reconnectOtaMaintenance')),
+        ),
+        Text(
+          '蓝牙断开不能证明维护已结束；重新连接只确认状态，不自动启用动作。',
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+      ],
+      if (state['otaWindow'] != null &&
+          (state['otaWindow']['state'] == 2 ||
+              state['otaWindow']['state'] == 3)) ...[
+        const SizedBox(height: 12),
+        _settingRow('升级 Wi-Fi', '${state['otaWindow']['ssid']}'),
+        _settingRow('临时密码', '${state['otaWindow']['password']}'),
+        _settingRow('浏览器地址', 'http://192.168.4.1/'),
+        _settingRow(
+          '当前阶段剩余时间',
+          '${((state['otaWindow']['remainingMs'] as num) / 1000).ceil()} 秒',
+        ),
+        Text(
+          '1. 手动连接以上 Wi-Fi（无互联网）。\n2. 浏览器打开以上地址，选择签名升级包。\n3. 等待设备报告结果；上传不需要保持蓝牙。\n关闭窗口不会恢复动作，退出后需手动启用控制。',
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+      ],
+      const SizedBox(height: 20),
       ExpansionTile(
         tilePadding: EdgeInsets.zero,
         title: Text('设备详情', style: TextStyle(color: p.ink)),
@@ -990,6 +1247,38 @@ class _ControlShellState extends State<ControlShell>
           _settingRow('应用 BLE 协议', '${state['appProtocol'] ?? '未知'}'),
           _settingRow('设备 BLE 协议', '${state['deviceProtocol'] ?? '未知'}'),
           _settingRow('控制状态', controlStatus(state)),
+          _settingRow(
+            '设备电量',
+            state['battery'] == null ? '未知（未采样）' : '${state['battery']}%',
+          ),
+          if (state['diagnostics'] is Map) ...[
+            _settingRow(
+              '诊断样本',
+              diagnosticsAreFresh(state) ? '最近采样' : '历史数据，已过期',
+            ),
+            _settingRow(
+              '上次停止原因',
+              diagnosticStopReason(state['diagnostics']['lastStop'] as int?),
+            ),
+            _settingRow(
+              '固件故障记录',
+              diagnosticFaults(state['diagnostics']['faults'] as int? ?? 0),
+            ),
+            _settingRow('启动原因代码', '${state['diagnostics']['resetReason']}'),
+            _settingRow('本次启动时长', '${state['diagnostics']['uptimeSeconds']} 秒'),
+            _settingRow('上次蓝牙断开代码', '${state['diagnostics']['lastGapReason']}'),
+            _settingRow(
+              '心跳超时次数',
+              '${state['diagnostics']['leaseExpiryCount']}',
+            ),
+            _settingRow('蓝牙断开次数', '${state['diagnostics']['disconnectCount']}'),
+            _settingRow(
+              '通知发送失败次数',
+              '${state['diagnostics']['notificationFailureCount']}',
+            ),
+            _settingRow('诊断采样时间', '${state['diagnosticsAt'] ?? '未知'}'),
+          ] else
+            _settingRow('固件诊断', '暂无数据（旧固件可正常控制）'),
           if (state['error'] != null) _settingRow('设备错误', '${state['error']}'),
           if (client.message != null) _settingRow('后台错误', client.message!),
           if (_localError != null) _settingRow('界面错误', _localError!),

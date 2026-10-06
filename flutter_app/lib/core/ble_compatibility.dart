@@ -3,7 +3,7 @@ import 'ble_protocol.dart';
 /// App and firmware releases use the same major/minor compatibility line.
 /// Patch releases may differ without changing pairing or the BLE contract.
 class BleCompatibility {
-  static const appVersion = '0.2.4';
+  static const appVersion = '0.2.9';
   static const appMajor = 0;
   static const appMinor = 2;
   static const protocolMajor = 1;

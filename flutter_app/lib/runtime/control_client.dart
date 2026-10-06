@@ -17,6 +17,8 @@ class ControlClient extends ChangeNotifier {
     'outputAuthorized': false,
   };
   String? message;
+  String? lanUploadToken;
+  int? _lanTokenWindow;
   bool running = false;
   bool _disposed = false;
   Future<void>? _starting;
@@ -49,6 +51,8 @@ class ControlClient extends ChangeNotifier {
         _handshaken = false;
         await _establishHandshake();
       } else {
+        lanUploadToken = null;
+        _lanTokenWindow = null;
         _handshaken = false;
         final old = state['runtimeId'];
         if (old is String) _retiredRuntimes.add(old);
@@ -95,6 +99,14 @@ class ControlClient extends ChangeNotifier {
         _notify();
       }
     }
+    if (state['connection'] != 'connected' ||
+        (state['lanWindow']?['state'] != 2 &&
+            state['lanWindow']?['state'] != 3) ||
+        (_lanTokenWindow != null &&
+            state['lanWindow']?['windowId'] != _lanTokenWindow)) {
+      lanUploadToken = null;
+      _lanTokenWindow = null;
+    }
     if (data['type'] == 'error' || data['type'] == 'rejected') {
       message = data['message']?.toString();
       _notify();
@@ -103,6 +115,22 @@ class ControlClient extends ChangeNotifier {
     if (id is int &&
         data['clientId'] == _clientId &&
         _pending.containsKey(id)) {
+      final privateWindow = data['privateLanWindow'];
+      if ((_pendingOps[id] == 'openLanWindow' ||
+              _pendingOps[id] == 'readLanUploadToken') &&
+          privateWindow is Map &&
+          state['connection'] == 'connected' &&
+          (state['lanWindow']?['state'] == 2 ||
+              state['lanWindow']?['state'] == 3) &&
+          privateWindow['windowId'] == state['lanWindow']?['windowId'] &&
+          privateWindow['token'] is String &&
+          RegExp(
+            r'^[0-9a-f]{32}$',
+          ).hasMatch(privateWindow['token'] as String)) {
+        lanUploadToken = privateWindow['token'] as String;
+        _lanTokenWindow = privateWindow['windowId'] as int;
+        _notify();
+      }
       final pending = _pending.remove(id)!;
       if (data['type'] == 'rejected') {
         pending.completeError(StateError(data['message'].toString()));
@@ -130,7 +158,7 @@ class ControlClient extends ChangeNotifier {
       notificationText: '正在准备蓝牙连接',
       notificationButtons: const [
         NotificationButton(id: 'stop', text: '暂停控制'),
-        NotificationButton(id: 'disconnect', text: '断开'),
+        NotificationButton(id: 'disconnect', text: '结束拍摄'),
       ],
       callback: startControlTask,
     );
@@ -185,7 +213,13 @@ class ControlClient extends ChangeNotifier {
     });
     try {
       await pending.future.timeout(
-        Duration(seconds: op == 'select' ? 120 : 15),
+        Duration(
+          seconds: op == 'select'
+              ? 120
+              : (op == 'openLanWindow' || op == 'closeOtaWindow')
+              ? 45
+              : 15,
+        ),
       );
     } on TimeoutException {
       throw TimeoutException('后台操作尚未确认，请刷新状态或断开');
@@ -204,6 +238,8 @@ class ControlClient extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    lanUploadToken = null;
+    _lanTokenWindow = null;
     if (!preview) FlutterForegroundTask.removeTaskDataCallback(_receive);
     for (final pending in _pending.values) {
       pending.completeError(StateError('界面已关闭；设备会话仍由后台管理'));

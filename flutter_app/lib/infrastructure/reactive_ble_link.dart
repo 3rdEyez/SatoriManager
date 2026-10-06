@@ -7,6 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../core/ble_protocol.dart';
 import '../core/device_session.dart';
+import '../core/lan_window.dart';
+import '../core/ota_window.dart';
 import 'ble_discovery.dart';
 
 /// Requests only the permissions needed by the current Android release.
@@ -41,7 +43,7 @@ Future<int?> _androidSdkInt() async {
 
 /// Android/iOS BLE transport. The runtime creates one instance and retains it
 /// for the lifetime of the foreground-service FlutterEngine.
-class ReactiveBleLink implements BleLink {
+class ReactiveBleLink implements BleLink, BleLargeWriteLink {
   ReactiveBleLink({FlutterReactiveBle? ble})
     : ble = ble ?? FlutterReactiveBle();
 
@@ -182,6 +184,18 @@ class ReactiveBleLink implements BleLink {
     }
   }
 
+  @override
+  Future<void> prepareLargeWrite(int length) async {
+    final id = _deviceId;
+    if (id == null || _currentState != BleLinkState.connected) {
+      throw StateError('BLE link is not connected');
+    }
+    final mtu = await ble.requestMtu(deviceId: id, mtu: 256);
+    if (mtu - 3 < length) {
+      throw StateError('BLE MTU insufficient for Wi-Fi configuration');
+    }
+  }
+
   QualifiedCharacteristic _characteristic(String uuid) {
     final id = _deviceId;
     if (id == null || _currentState != BleLinkState.connected) {
@@ -195,8 +209,22 @@ class ReactiveBleLink implements BleLink {
   }
 
   @override
-  Future<List<int>> read(String uuid) =>
-      ble.readCharacteristic(_characteristic(uuid));
+  Future<List<int>> read(String uuid) async {
+    if (uuid == OtaWindowStatus.uuid || uuid == LanWindowStatus.lanUuid) {
+      final id = _deviceId;
+      if (id == null) throw StateError('BLE link is not connected');
+      final services = await ble.getDiscoveredServices(id);
+      final exists = services.any(
+        (service) =>
+            service.id.toString().toLowerCase() == BleProtocol.serviceUuid &&
+            service.characteristics.any(
+              (c) => c.id.toString().toLowerCase() == uuid.toLowerCase(),
+            ),
+      );
+      if (!exists) throw const BleCharacteristicAbsent();
+    }
+    return ble.readCharacteristic(_characteristic(uuid));
+  }
 
   @override
   Future<void> write(String uuid, List<int> value) =>

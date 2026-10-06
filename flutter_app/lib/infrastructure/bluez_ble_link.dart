@@ -126,7 +126,7 @@ class BluezBleLink implements BleLink {
         }
       }
     }
-    throw StateError('GATT characteristic not found: $uuid');
+    throw const BleCharacteristicAbsent();
   }
 
   @override

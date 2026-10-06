@@ -3,3 +3,23 @@
 /SatoriManagerContent/build
 *.user
 *.autosave
+
+# Local device identities, credentials, signing files and captures stay private.
+.local/
+private*/
+artifacts/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.sota
+*.log
+__pycache__/
+device-config*.json
+usb-config*.json
+
+*.apk
+*.bin
+*.zip
