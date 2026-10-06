@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "date": "2026-10-06",
+  "source_base": "628b549dba7ccf088a0106c84f75b01307b8bd0e",
+  "pubspec_version": "0.2.10+12",
+  "apk": {
+    "filename": "SatoriManager-0.2.10+12-arm64-development-signed.apk",
+    "sha256": "97813a1d0b1257117d872d2772e78bb719f2b4e61a414d98424209e190d527bf",
+    "size_bytes": 8735239,
+    "package": "com.example.satori_manager",
+    "version_name": "0.2.10",
+    "version_code": 2012,
+    "abi": "arm64-v8a",
+    "min_sdk": 24,
+    "target_sdk": 36,
+    "signature": "APK v2 verified; existing development signer",
+    "signer_certificate_sha256": "9590299241dcb834c82a16535bcbabbdb152a489320ce3ecfe38f081a887419c"
+  },
+  "validation": {
+    "flutter_tests": 179,
+    "tool_tests": 7,
+    "format": "passed",
+    "analyze": "passed",
+    "protocol_contract": "passed",
+    "independent_review": "passed"
+  },
+  "limits": [
+    "No real Android or HarmonyOS/ZhuoyiTong scanning/pairing/control validation.",
+    "Original installed signer unknown; no in-place compatibility claim.",
+    "No device operation, installation, key generation, telemetry, new permission, push or PR."
+  ]
+}

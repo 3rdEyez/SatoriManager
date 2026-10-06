@@ -10,24 +10,61 @@ import '../core/device_session.dart';
 import '../core/lan_window.dart';
 import '../core/ota_window.dart';
 import 'ble_discovery.dart';
+import 'scan_lifecycle.dart';
 
 /// Requests only the permissions needed by the current Android release.
 /// Invoke from a foreground UI gesture before starting the connected-device
 /// service. The UI must not create a BLE adapter or open a BLE connection.
+Map<String, Object?> blePermissionDiagnostics = {
+  'sdkInt': null,
+  'locationPermission': 'notRequested',
+  'bluetoothScan': 'notRequested',
+  'bluetoothConnect': 'notRequested',
+  'phase': 'notRequested',
+};
+
 Future<bool> requestBlePermissions() async {
-  final sdkInt = await _androidSdkInt();
-  final permissions = <Permission>[];
-  if (sdkInt != null && sdkInt <= 30) {
-    permissions.add(Permission.locationWhenInUse);
-  } else {
-    permissions
-      ..add(Permission.bluetoothScan)
-      ..add(Permission.bluetoothConnect);
+  blePermissionDiagnostics = {
+    'sdkInt': null,
+    'locationPermission': 'notRequested',
+    'bluetoothScan': 'notRequested',
+    'bluetoothConnect': 'notRequested',
+    'phase': 'checkingSdk',
+  };
+  try {
+    final sdkInt = await _androidSdkInt().timeout(const Duration(seconds: 5));
+    blePermissionDiagnostics['sdkInt'] = sdkInt;
+    final permissions = <Permission>[];
+    if (sdkInt != null && sdkInt <= 30) {
+      permissions.add(Permission.locationWhenInUse);
+    } else {
+      permissions
+        ..add(Permission.bluetoothScan)
+        ..add(Permission.bluetoothConnect);
+    }
+    blePermissionDiagnostics['phase'] = 'requestingPermissions';
+    final statuses = await permissions.request().timeout(
+      const Duration(seconds: 15),
+    );
+    for (final entry in statuses.entries) {
+      final field = entry.key == Permission.locationWhenInUse
+          ? 'locationPermission'
+          : entry.key == Permission.bluetoothScan
+          ? 'bluetoothScan'
+          : 'bluetoothConnect';
+      blePermissionDiagnostics[field] = entry.value.name;
+    }
+    blePermissionDiagnostics['phase'] = 'completed';
+    return statuses.values.every(
+      (status) => status.isGranted || status.isLimited,
+    );
+  } on TimeoutException {
+    blePermissionDiagnostics['phase'] = 'timeout';
+    throw StateError('蓝牙权限确认超时，请查看系统权限状态后重试');
+  } catch (_) {
+    blePermissionDiagnostics['phase'] = 'failed';
+    throw StateError('蓝牙权限确认失败，请查看系统权限状态');
   }
-  final statuses = await permissions.request();
-  return statuses.values.every(
-    (status) => status.isGranted || status.isLimited,
-  );
 }
 
 Future<int?> _androidSdkInt() async {
@@ -53,7 +90,7 @@ class ReactiveBleLink implements BleLink, BleLargeWriteLink {
   final StreamController<BleLinkState> _state =
       StreamController<BleLinkState>.broadcast();
   BleLinkState _currentState = BleLinkState.disconnected;
-  bool _scanActive = false;
+  final _scan = ScanLifecycle<BleDiscoveredDevice>();
   int _connectionGeneration = 0;
 
   @override
@@ -64,53 +101,36 @@ class ReactiveBleLink implements BleLink, BleLargeWriteLink {
   /// Compatibility wrapper; prefer the top-level permission helper.
   static Future<bool> requestPermissions() => requestBlePermissions();
 
-  /// Scans only for the SatoriEye service. Retain the same adapter/runtime
-  /// instance for scanning and later connection ownership.
-  Stream<BleDiscoveredDevice> scan({
+  Stream<void> get scanChanges => _scan.changes;
+  Map<String, Object?> get scanDiagnostics =>
+      _scan.diagnostics(ble.status.name);
+  bool get isScanning => _scan.isScanning;
+
+  /// One service-owned scan, with no overlapping native start after an
+  /// unconfirmed stop. Native exception messages never enter diagnostics.
+  void startScan({
+    required void Function(BleDiscoveredDevice) onDevice,
     Duration timeout = const Duration(seconds: 8),
-  }) {
-    if (_scanActive) throw StateError('A BLE scan is already active');
-    _scanActive = true;
-    return Stream<BleDiscoveredDevice>.multi((controller) {
-      Timer? timer;
-      final subscription = ble
-          .scanForDevices(
-            withServices: [Uuid.parse(BleProtocol.serviceUuid)],
-            scanMode: ScanMode.lowLatency,
-            requireLocationServicesEnabled: false,
-          )
-          .listen(
-            (device) => controller.add(
-              BleDiscoveredDevice(
-                id: device.id,
-                name: device.name,
-                rssi: device.rssi,
-              ),
-            ),
-            onError: (Object error, StackTrace stack) {
-              timer?.cancel();
-              _scanActive = false;
-              controller.addError(error, stack);
-              controller.close();
-            },
-            onDone: () {
-              timer?.cancel();
-              _scanActive = false;
-              controller.close();
-            },
-          );
-      timer = Timer(timeout, () async {
-        await subscription.cancel();
-        _scanActive = false;
-        await controller.close();
-      });
-      controller.onCancel = () async {
-        timer?.cancel();
-        _scanActive = false;
-        await subscription.cancel();
-      };
-    });
-  }
+  }) => _scan.start(
+    () => ble
+        .scanForDevices(
+          withServices: [Uuid.parse(BleProtocol.serviceUuid)],
+          scanMode: ScanMode.lowLatency,
+          requireLocationServicesEnabled: false,
+        )
+        .map(
+          (device) => BleDiscoveredDevice(
+            id: device.id,
+            name: device.name,
+            rssi: device.rssi,
+          ),
+        ),
+    onData: onDevice,
+    timeout: timeout,
+  );
+
+  Future<bool> stopScan({String reason = 'cancelled'}) =>
+      _scan.stop(reason: reason);
 
   @override
   Future<void> connect(String id) async {
@@ -260,6 +280,7 @@ class ReactiveBleLink implements BleLink, BleLargeWriteLink {
   }
 
   Future<void> dispose() async {
+    await _scan.dispose();
     await disconnect();
     await _state.close();
   }

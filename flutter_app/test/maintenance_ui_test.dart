@@ -2,11 +2,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:satori_manager/main.dart';
 import 'package:satori_manager/runtime/control_client.dart';
 
+class EndingClient extends ControlClient {
+  EndingClient(super.initial) : super.preview();
+  final commands = <String>[];
+  @override
+  Future<void> send(String op, [Map<String, Object?> args = const {}]) async {
+    commands.add(op);
+    state = {...state, 'connection': 'disconnected', 'endState': 'confirmed'};
+    notifyListeners();
+  }
+}
+
 void main() {
   testWidgets('ending a shoot reminds user to switch physical power off', (
     tester,
   ) async {
-    final client = ControlClient.preview({
+    final client = EndingClient({
       'connection': 'connected',
       'sessionPhase': 'readyPaused',
       'outputAuthorized': false,
@@ -17,7 +28,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('结束拍摄'));
     await tester.pump();
-    expect(find.text('已结束控制。请关闭觉瞳实体电源；软件暂停不等于断电。'), findsOneWidget);
+    expect(find.text('结束请求已确认。请关闭觉瞳实体电源；软件暂停不等于断电。'), findsOneWidget);
+    expect(client.commands, ['disconnect']);
   });
 
   testWidgets(

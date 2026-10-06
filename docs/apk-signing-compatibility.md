@@ -1,6 +1,6 @@
 # Existing-install APK signing compatibility
 
-The latest locally validated `0.2.7+9` ARM64 APK is **unsigned**. Its package is
+The historical locally validated `0.2.7+9` ARM64 APK is **unsigned**. Its package is
 `com.example.satori_manager`, versionCode `9`. It cannot be installed directly.
 `flutter_app/android/app/build.gradle.kts` currently assigns the release build
 to the template's `debug` signing configuration. That source setting is not
@@ -45,3 +45,9 @@ The current signing config and old README wording alone cannot establish which
 key signed the phone's installed App. This is the remaining compatibility fact,
 not a reason to request Wi-Fi passwords or change the network. No private key
 was read or used, no credential was created and no APK was installed here.
+
+## 2026-10-06 scan-flow development APK
+
+`0.2.10+12` was built for ARM64 and signed using the existing local Android development identity, without creating a new key. The actual APK verifies with APK Signature Scheme v2. Package: `com.example.satori_manager`; versionName: `0.2.10`; versionCode: `2012` (ARM64 ABI offset 2000 plus source build 12); minSdk: 24.
+
+Public signer certificate SHA256: `9590299241dcb834c82a16535bcbabbdb152a489320ce3ecfe38f081a887419c`. The installed 0.2.4 APK's certificate is not known, so this does not establish in-place update compatibility. If Android rejects the signer, do not uninstall or clear data; use the original signing channel. HarmonyOS/ZhuoyiTong hardware validation remains outstanding.

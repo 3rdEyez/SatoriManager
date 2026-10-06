@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'control_task.dart';
+import 'client_snapshot_policy.dart';
+import 'service_stop_policy.dart';
 
 class ControlClient extends ChangeNotifier {
   bool preview = false;
@@ -20,6 +22,10 @@ class ControlClient extends ChangeNotifier {
   String? lanUploadToken;
   int? _lanTokenWindow;
   bool running = false;
+  DateTime? lastSnapshotAt;
+  Duration? get snapshotAge => lastSnapshotAt == null
+      ? null
+      : DateTime.now().difference(lastSnapshotAt!);
   bool _disposed = false;
   Future<void>? _starting;
   Future<void>? _handshaking;
@@ -46,11 +52,17 @@ class ControlClient extends ChangeNotifier {
   Future<void> restore() async {
     if (preview || _disposed) return;
     try {
-      running = await FlutterForegroundTask.isRunningService;
+      final serviceRunning = await FlutterForegroundTask.isRunningService
+          .timeout(const Duration(seconds: 10));
+      if (_disposed) return;
+      running = serviceRunning;
       if (running) {
         _handshaken = false;
         await _establishHandshake();
       } else {
+        final scan = state['scanDiagnostics'];
+        final stopKnown = scan is! Map || scan['stopConfirmed'] == true;
+        lastSnapshotAt = null;
         lanUploadToken = null;
         _lanTokenWindow = null;
         _handshaken = false;
@@ -60,6 +72,16 @@ class ControlClient extends ChangeNotifier {
           ...state,
           'runtimeId': null,
           'connection': 'disconnected',
+          'discovered': <Object>[],
+          'scanDiagnostics': {
+            'phase': stopKnown ? 'idle' : 'stopUnknown',
+            'elapsedMs': 0,
+            'resultCount': 0,
+            'endReason': 'backgroundNotRunning',
+            'adapterStatus': 'unknown',
+            'stopConfirmed': stopKnown,
+            'canStart': stopKnown,
+          },
           'outputAuthorized': false,
           'autoRotate': false,
           'autoWink': false,
@@ -76,15 +98,26 @@ class ControlClient extends ChangeNotifier {
 
   void _receive(Object data) {
     if (_disposed || data is! Map) return;
+    if (!acceptsTaskMessage(
+      data,
+      clientId: _clientId,
+      runtimeId: state['runtimeId'] as String?,
+      pendingOperations: _pendingOps,
+      retiredRuntimes: _retiredRuntimes,
+    )) {
+      return;
+    }
     if (data['clientId'] != null && data['clientId'] != _clientId) return;
+    // Request replies cannot revive an expired operation or retired runtime.
+    if (data['id'] != null && !_pending.containsKey(data['id'])) return;
     final raw = data['data'] ?? data['snapshot'];
     if (raw is Map) {
       final incoming = Map<String, dynamic>.from(raw);
       final runtime = incoming['runtimeId'];
       if (runtime is! String || _retiredRuntimes.contains(runtime)) return;
       if (runtime != state['runtimeId'] &&
-          state['runtimeId'] != null &&
           !(data['clientId'] == _clientId &&
+              _pending.containsKey(data['id']) &&
               _pendingOps[data['id']] == 'snapshot')) {
         return;
       }
@@ -96,6 +129,7 @@ class ControlClient extends ChangeNotifier {
           (incoming['revision'] as int? ?? 0) >=
               (state['revision'] as int? ?? 0)) {
         state = incoming;
+        lastSnapshotAt = DateTime.now();
         _notify();
       }
     }
@@ -107,7 +141,8 @@ class ControlClient extends ChangeNotifier {
       lanUploadToken = null;
       _lanTokenWindow = null;
     }
-    if (data['type'] == 'error' || data['type'] == 'rejected') {
+    if ((data['type'] == 'error' || data['type'] == 'rejected') &&
+        (data['id'] == null || _pending.containsKey(data['id']))) {
       message = data['message']?.toString();
       _notify();
     }
@@ -143,7 +178,12 @@ class ControlClient extends ChangeNotifier {
   Future<void> start() =>
       _starting ??= _start().whenComplete(() => _starting = null);
   Future<void> _start() async {
-    if (await FlutterForegroundTask.isRunningService) {
+    if (_disposed) throw StateError('界面已关闭');
+    final serviceRunning = await FlutterForegroundTask.isRunningService.timeout(
+      const Duration(seconds: 10),
+    );
+    if (_disposed) throw StateError('界面已关闭');
+    if (serviceRunning) {
       running = true;
       await _establishHandshake();
       return;
@@ -161,7 +201,8 @@ class ControlClient extends ChangeNotifier {
         NotificationButton(id: 'disconnect', text: '结束拍摄'),
       ],
       callback: startControlTask,
-    );
+    ).timeout(const Duration(seconds: 15));
+    if (_disposed) throw StateError('界面已关闭；后台启动结果请重新同步');
     if (result is ServiceRequestFailure) throw StateError('后台服务启动失败：$result');
     running = true;
     await _establishHandshake();
@@ -169,10 +210,11 @@ class ControlClient extends ChangeNotifier {
   }
 
   Future<void> _establishHandshake() {
+    if (_disposed) return Future.error(StateError('界面已关闭'));
     if (_handshaken) return Future<void>.value();
     return _handshaking ??= _sendRequest('snapshot')
         .then((_) {
-          _handshaken = true;
+          if (!_disposed) _handshaken = true;
         })
         .whenComplete(() => _handshaking = null);
   }
@@ -180,7 +222,10 @@ class ControlClient extends ChangeNotifier {
   Future<void> send(String op, [Map<String, Object?> args = const {}]) async {
     if (_disposed) throw StateError('界面已关闭');
     if (!running) {
-      if (op == 'stop' || op == 'disconnect') return;
+      if (op == 'stop') return;
+      if (op == 'disconnect') {
+        throw StateError('后台会话未运行，结束状态未确认；请刷新状态');
+      }
       await start();
     }
     if (op == 'snapshot') {
@@ -196,6 +241,7 @@ class ControlClient extends ChangeNotifier {
     String op, [
     Map<String, Object?> args = const {},
   ]) async {
+    if (_disposed) throw StateError('界面已关闭');
     if (op != 'snapshot' && state['runtimeId'] is! String) {
       throw StateError('后台会话尚未同步，请刷新状态后重试');
     }
@@ -228,7 +274,7 @@ class ControlClient extends ChangeNotifier {
       _pendingOps.remove(id);
     }
     if (op == 'disconnect' || op == 'openTransfer') {
-      await FlutterForegroundTask.stopService();
+      await stopServiceChecked(FlutterForegroundTask.stopService);
       running = false;
       _handshaken = false;
       _notify();

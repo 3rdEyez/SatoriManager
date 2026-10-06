@@ -11,6 +11,7 @@ import '../core/safety_limits.dart';
 import '../core/control_status.dart';
 import '../infrastructure/reactive_ble_link.dart';
 import 'client_generation_guard.dart';
+import 'service_stop_policy.dart';
 
 @pragma('vm:entry-point')
 void startControlTask() {
@@ -21,7 +22,8 @@ class ControlTask extends TaskHandler {
   ControlEngine? engine;
   ReactiveBleLink? link;
   StreamSubscription<Map<String, Object?>>? subscription;
-  StreamSubscription<dynamic>? scan;
+  StreamSubscription<void>? scanChanges;
+  int _scanRequestGeneration = 0;
   final List<Map> queued = [];
   final ClientGenerationGuard _clientGuard = ClientGenerationGuard();
   final Map<String, Map<String, Object?>> discovered = {};
@@ -35,7 +37,18 @@ class ControlTask extends TaskHandler {
   Map<String, Object?> snapshot() => {
     ...?engine?.snapshot(),
     'revision': ++revision,
-    if (searching) 'connection': 'searching',
+    if (link?.isScanning == true) 'connection': 'searching',
+    'scanDiagnostics':
+        link?.scanDiagnostics ??
+        {
+          'phase': 'idle',
+          'elapsedMs': 0,
+          'resultCount': 0,
+          'endReason': null,
+          'adapterStatus': 'unknown',
+          'stopConfirmed': true,
+          'canStart': true,
+        },
     'discovered': discovered.values.toList(),
     'favorites': favorites,
   };
@@ -70,6 +83,10 @@ class ControlTask extends TaskHandler {
       );
       final adapter = ReactiveBleLink();
       link = adapter;
+      scanChanges = adapter.scanChanges.listen((_) {
+        searching = adapter.isScanning;
+        publish();
+      });
       final active = ControlEngine(DeviceSession(adapter), actions);
       engine = active;
       subscription = active.updates.listen((_) => publish());
@@ -87,7 +104,14 @@ class ControlTask extends TaskHandler {
         'type': 'error',
         'message': '$error',
       });
-      await FlutterForegroundTask.stopService();
+      try {
+        await stopServiceChecked(FlutterForegroundTask.stopService);
+      } catch (_) {
+        FlutterForegroundTask.sendDataToMain({
+          'type': 'error',
+          'message': '后台初始化失败，服务停止未确认；请查看系统状态',
+        });
+      }
     }
   }
 
@@ -137,6 +161,7 @@ class ControlTask extends TaskHandler {
   Future<void> handle(Map data) async {
     final active = engine!;
     try {
+      if (destroying) throw StateError('后台正在结束，不能启动新操作');
       void ensureCurrentClient() {
         final authorization = _clientGuard.authorize(
           data,
@@ -155,13 +180,18 @@ class ControlTask extends TaskHandler {
               active.connection == 'reconnecting') {
             throw StateError('请先结束当前会话');
           }
-          await scan?.cancel();
           ensureCurrentClient();
+          if (link!.scanDiagnostics['canStart'] != true) {
+            throw StateError('扫描尚未确认停止，请先停止扫描；不要重复启动');
+          }
+          final scanGeneration = ++_scanRequestGeneration;
           discovered.clear();
-          searching = true;
-          publish();
-          scan = link!.scan().listen(
-            (device) {
+          active.error = null;
+          link!.startScan(
+            onDevice: (device) {
+              if (scanGeneration != _scanRequestGeneration || destroying) {
+                return;
+              }
               discovered[device.id] = {
                 'id': device.id,
                 'name': device.name,
@@ -169,18 +199,28 @@ class ControlTask extends TaskHandler {
               };
               publish();
             },
-            onError: (Object e) {
-              searching = false;
-              active.error = '$e';
-              publish();
-            },
-            onDone: () {
-              searching = false;
-              publish();
-            },
           );
+          searching = link!.isScanning;
+          publish();
+        case 'stopScan':
+          final stopGeneration = ++_scanRequestGeneration;
+          if (!await link!.stopScan()) {
+            throw StateError('扫描停止未确认，不能重新扫描或连接；请检查蓝牙状态');
+          }
+          ensureCurrentClient();
+          if (destroying || stopGeneration != _scanRequestGeneration) {
+            throw StateError('扫描操作已变化，请刷新状态');
+          }
+          searching = false;
+          publish();
         case 'select':
-          await scan?.cancel();
+          final scanGeneration = ++_scanRequestGeneration;
+          if (!await link!.stopScan(reason: 'selected')) {
+            throw StateError('扫描停止未确认，暂不能连接');
+          }
+          if (destroying || scanGeneration != _scanRequestGeneration) {
+            throw StateError('设备选择已取消，请重新选择');
+          }
           ensureCurrentClient();
           searching = false;
           final id = data['deviceId'] as String;
@@ -268,8 +308,14 @@ class ControlTask extends TaskHandler {
         case 'stop':
           await active.stopMotion();
         case 'disconnect':
-          await scan?.cancel();
+          final disconnectGeneration = ++_scanRequestGeneration;
+          if (!await link!.stopScan(reason: 'disconnect')) {
+            throw StateError('扫描停止未确认；未声称结束蓝牙活动');
+          }
           ensureCurrentClient();
+          if (destroying || disconnectGeneration != _scanRequestGeneration) {
+            throw StateError('结束操作已变化，请刷新状态');
+          }
           searching = false;
           await active.disconnect();
         default:
@@ -308,10 +354,13 @@ class ControlTask extends TaskHandler {
       try {
         if (id == 'stop') await engine?.stopMotion();
         if (id == 'disconnect') {
-          await scan?.cancel();
+          ++_scanRequestGeneration;
+          if (!await link!.stopScan(reason: 'disconnect')) {
+            throw StateError('扫描停止未确认；未声称结束蓝牙活动');
+          }
           searching = false;
           await engine?.disconnect();
-          await FlutterForegroundTask.stopService();
+          await stopServiceChecked(FlutterForegroundTask.stopService);
         }
       } catch (e) {
         FlutterForegroundTask.sendDataToMain({
@@ -325,7 +374,9 @@ class ControlTask extends TaskHandler {
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     destroying = true;
-    await scan?.cancel();
+    ++_scanRequestGeneration;
+    await link?.stopScan(reason: 'destroyed');
+    await scanChanges?.cancel();
     await subscription?.cancel();
     await engine?.dispose();
     await link?.dispose();

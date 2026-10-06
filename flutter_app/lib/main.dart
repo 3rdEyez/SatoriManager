@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'core/control_status.dart';
-import 'infrastructure/reactive_ble_link.dart' show requestBlePermissions;
+import 'infrastructure/reactive_ble_link.dart'
+    show requestBlePermissions, blePermissionDiagnostics;
 import 'joystick_pad.dart';
 import 'wifi_setup_dialog.dart';
 import 'runtime/control_client.dart';
@@ -100,15 +101,18 @@ class ControlShell extends StatefulWidget {
 
 class _ControlShellState extends State<ControlShell>
     with WidgetsBindingObserver {
-  late final ControlClient client = widget.previewClient ?? ControlClient();
+  late ControlClient client = widget.previewClient ?? ControlClient();
+  int _clientGeneration = 0;
+  int _discoveryIntent = 0;
   SatoriPalette get p => SatoriPalette.of(context);
   final values = [0.5, 0.5, 0.5];
   int tab = 0;
   bool busy = false;
   bool resetStickOnRelease = true;
   bool? autoView;
-  bool _automaticConnection = true;
-  String? _selectionPending;
+  bool _scanStopPending = false;
+  bool _endingSession = false;
+  Timer? _freshnessTimer;
   String? _joystickEndpoint;
   String? _localError;
   DateTime? _lastJoystickSend;
@@ -120,13 +124,9 @@ class _ControlShellState extends State<ControlShell>
     WidgetsBinding.instance.addObserver(this);
     client.addListener(_refresh);
     _syncJoystickTarget();
-    if (!client.preview) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && client.state['connection'] == 'disconnected') {
-          _discover();
-        }
-      });
-    }
+    _freshnessTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -135,8 +135,27 @@ class _ControlShellState extends State<ControlShell>
   }
 
   @override
+  void didUpdateWidget(ControlShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.previewClient == widget.previewClient) return;
+    client.removeListener(_refresh);
+    client.dispose();
+    client = widget.previewClient ?? ControlClient();
+    client.addListener(_refresh);
+    _clientGeneration++;
+    _discoveryIntent++;
+    busy = false;
+    _scanStopPending = false;
+    _endingSession = false;
+    _localError = null;
+    _joystickEndpoint = null;
+    _syncJoystickTarget();
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _freshnessTimer?.cancel();
     client.removeListener(_refresh);
     client.dispose();
     super.dispose();
@@ -146,7 +165,6 @@ class _ControlShellState extends State<ControlShell>
     if (!mounted) return;
     _syncJoystickTarget();
     setState(() {});
-    _tryAutoSelect();
   }
 
   void _syncJoystickTarget() {
@@ -181,6 +199,7 @@ class _ControlShellState extends State<ControlShell>
 
   Future<void> _run(Future<void> Function() action) async {
     if (busy) return;
+    final generation = _clientGeneration;
     setState(() {
       busy = true;
       _localError = null;
@@ -188,63 +207,83 @@ class _ControlShellState extends State<ControlShell>
     try {
       await action();
     } catch (error) {
-      _showError(error);
+      if (mounted && generation == _clientGeneration) _showError(error);
     } finally {
-      if (mounted) {
+      if (mounted && generation == _clientGeneration) {
         setState(() => busy = false);
-        _tryAutoSelect();
       }
     }
   }
 
   Future<void> _discover() => _run(() async {
-    _automaticConnection = true;
-    _selectionPending = null;
+    final active = client;
+    final generation = _clientGeneration;
+    final intent = ++_discoveryIntent;
+    bool current() =>
+        mounted &&
+        generation == _clientGeneration &&
+        intent == _discoveryIntent;
+    if (active.preview) {
+      await active.send('discover');
+      return;
+    }
     if (!Platform.isAndroid) throw StateError('目前仅支持 Android 手机连接觉瞳');
     if (!await requestBlePermissions()) throw StateError('请允许蓝牙权限后重试');
-    final permission =
-        await FlutterForegroundTask.checkNotificationPermission();
+    if (!current()) return;
+    final permission = await FlutterForegroundTask.checkNotificationPermission()
+        .timeout(const Duration(seconds: 10));
+    if (!current()) return;
     if (permission != NotificationPermission.granted) {
       final granted =
-          await FlutterForegroundTask.requestNotificationPermission();
+          await FlutterForegroundTask.requestNotificationPermission().timeout(
+            const Duration(seconds: 15),
+          );
       if (granted != NotificationPermission.granted) {
         throw StateError('请允许控制会话通知后重试');
       }
     }
-    await client.start();
-    if (client.state['connection'] == 'connected') return;
-    await client.send('discover');
+    if (!current()) return;
+    await active.start();
+    if (!current() || active.state['connection'] == 'connected') return;
+    await active.send('discover');
   });
 
-  void _tryAutoSelect() {
-    if (!_automaticConnection || busy || client.preview) return;
-    final state = client.state;
-    if (state['connection'] != 'searching') return;
-    final discovered = state['discovered'];
-    if (discovered is! List || discovered.isEmpty) return;
-    final device = discovered.first;
-    if (device is! Map || device['id'] is! String) return;
-    final id = device['id'] as String;
-    if (_selectionPending == id) return;
-    _selectionPending = id;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _automaticConnection) {
-        _run(() => client.send('select', {'deviceId': id}));
+  Future<void> _stopDiscovery() async {
+    if (_scanStopPending) return;
+    _discoveryIntent++;
+    final active = client;
+    final generation = _clientGeneration;
+    setState(() => _scanStopPending = true);
+    try {
+      await active.send('stopScan');
+    } catch (error) {
+      if (mounted && generation == _clientGeneration) _showError(error);
+    } finally {
+      if (mounted && generation == _clientGeneration) {
+        setState(() => _scanStopPending = false);
       }
-    });
+    }
   }
 
   Future<void> _disconnect() async {
-    _automaticConnection = false;
+    if (_endingSession) return;
+    _discoveryIntent++;
+    final active = client;
+    final generation = _clientGeneration;
+    setState(() => _endingSession = true);
     try {
-      await client.send('disconnect');
-      if (mounted) {
+      await active.send('disconnect');
+      if (mounted && generation == _clientGeneration) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已结束控制。请关闭觉瞳实体电源；软件暂停不等于断电。')),
+          const SnackBar(content: Text('结束请求已确认。请关闭觉瞳实体电源；软件暂停不等于断电。')),
         );
       }
     } catch (error) {
-      _showError(error);
+      if (mounted && generation == _clientGeneration) _showError(error);
+    } finally {
+      if (mounted && generation == _clientGeneration) {
+        setState(() => _endingSession = false);
+      }
     }
   }
 
@@ -492,13 +531,7 @@ class _ControlShellState extends State<ControlShell>
                 child: Text(
                   connected
                       ? controlStatus(state)
-                      : state['connection'] == 'searching'
-                      ? '正在寻找觉瞳设备'
-                      : state['connection'] == 'connecting'
-                      ? '正在连接觉瞳设备'
-                      : state['connection'] == 'failed'
-                      ? '连接失败，请在设置中重试'
-                      : '尚未连接觉瞳设备',
+                      : _connectionDescription(state),
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -844,7 +877,6 @@ class _ControlShellState extends State<ControlShell>
     );
     if (input == null || !mounted) return;
     await _run(() async {
-      _automaticConnection = false;
       await client.send('openLanWindow', {
         'rememberNetwork': input.rememberNetwork,
         'ssid': input.ssid,
@@ -933,12 +965,224 @@ class _ControlShellState extends State<ControlShell>
     ),
   );
 
-  Widget _settingsPage(Map<String, dynamic> state) {
-    final connected = state['connection'] == 'connected';
-    final searching =
-        state['connection'] == 'searching' ||
+  String _connectionDescription(Map<String, dynamic> state) {
+    final scan = state['scanDiagnostics'];
+    final phase = scan is Map ? scan['phase'] : null;
+    if (phase == 'stopping') return '正在停止搜索，请稍候';
+    if (phase == 'stopUnknown') return '搜索停止未确认，请先确认停止';
+    if (phase == 'scanning' || state['connection'] == 'searching') {
+      return '正在搜索，请手动选择设备';
+    }
+    if (state['connection'] == 'connecting' ||
+        state['connection'] == 'reconnecting') {
+      return switch (state['sessionPhase']) {
+        'reading' => '正在读取设备信息并验证连接',
+        'claiming' => '正在认证并申请设备控制',
+        _ => '正在建立蓝牙连接',
+      };
+    }
+    if (phase == 'failed') return '搜索失败，请在设置中查看并重试';
+    if (state['connection'] == 'failed') return '连接失败，请在设置中重试';
+    return '尚未连接觉瞳设备';
+  }
+
+  Widget _discoveryPanel(Map<String, dynamic> state) {
+    final scan = state['scanDiagnostics'] is Map
+        ? state['scanDiagnostics'] as Map
+        : const <String, Object?>{};
+    final phase = scan['phase']?.toString() ?? 'idle';
+    final scanning = phase == 'scanning' || state['connection'] == 'searching';
+    final stopping = phase == 'stopping';
+    final unknown = phase == 'stopUnknown';
+    final restartRequired =
+        unknown &&
+        (scan['errorType'] == 'cancelError' ||
+            scan['endReason'] == 'backgroundNotRunning');
+    final connecting =
         state['connection'] == 'connecting' ||
         state['connection'] == 'reconnecting';
+    final canSearch =
+        !busy &&
+        !_scanStopPending &&
+        !scanning &&
+        !stopping &&
+        !unknown &&
+        !connecting &&
+        scan['canStart'] != false;
+    final canSelect =
+        !busy &&
+        !_scanStopPending &&
+        !stopping &&
+        !unknown &&
+        !connecting &&
+        (scanning || scan['stopConfirmed'] == true);
+    final devices =
+        (state['discovered'] is List ? state['discovered'] as List : const [])
+            .whereType<Map>()
+            .where((device) => device['id'] is String)
+            .toList();
+    final elapsed = scan['elapsedMs'] is num ? scan['elapsedMs'] as num : 0;
+    final age = client.snapshotAge;
+    final displayedElapsed =
+        elapsed + (scanning && age != null ? age.inMilliseconds : 0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          _connectionDescription(state),
+          style: TextStyle(color: p.ink, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          unknown
+              ? restartRequired
+                    ? '系统未确认停止，不能重新搜索或连接。请从 Android 系统设置停止整个应用后重新打开；仅返回桌面不够。本界面不会强制停止或假报成功。'
+                    : '系统尚未确认停止，不能重新搜索或连接。可再次请求确认；结束后台会话也必须先确认停止。'
+              : connecting
+              ? '正在连接你选择的设备，不会切换到其他搜索结果。'
+              : scanning
+              ? '发现的设备会实时出现在下方。选择后先停止搜索，再连接；也可随时取消搜索。'
+              : phase == 'failed'
+              ? '请检查手机蓝牙和权限。停止已确认后可重新搜索，详情见扫描诊断。'
+              : devices.isEmpty && phase == 'stopped'
+              ? '本次没有发现设备。请确认觉瞳已开启且未被其他手机占用，再重新搜索。'
+              : '先搜索，再选择你要连接的觉瞳。不会自动连接第一台设备。',
+          style: TextStyle(color: p.muted, fontSize: 13),
+        ),
+        if (devices.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            '连接会申请设备控制，并可能按既有设置启用动作。请确认设备和周围空间。',
+            style: TextStyle(color: p.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          for (final device in devices)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: OutlinedButton(
+                key: ValueKey('discover-device-${device['id']}'),
+                onPressed: canSelect
+                    ? () {
+                        final active = client;
+                        _run(
+                          () => active.send('select', {
+                            'deviceId': device['id'] as String,
+                          }),
+                        );
+                      }
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.bluetooth),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              device['name']?.toString().trim().isNotEmpty ==
+                                      true
+                                  ? device['name'].toString()
+                                  : '未命名觉瞳',
+                            ),
+                            Text(
+                              '${device['id']} · 信号 ${device['rssi'] ?? '未知'}',
+                              style: TextStyle(color: p.muted, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Text('选择并连接'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+        const SizedBox(height: 12),
+        if (scanning || stopping || unknown)
+          _outlinedAction(
+            unknown
+                ? restartRequired
+                      ? '停止未确认，需结束整个应用'
+                      : '再次确认停止搜索'
+                : stopping
+                ? '正在停止搜索…'
+                : '取消搜索',
+            Icons.stop_circle_outlined,
+            _scanStopPending || stopping || restartRequired
+                ? null
+                : _stopDiscovery,
+          ),
+        const SizedBox(height: 8),
+        _outlinedAction(
+          '重新搜索',
+          Icons.bluetooth_searching,
+          canSearch ? _discover : null,
+        ),
+        TextButton(onPressed: _showPairingHelp, child: const Text('配对帮助')),
+        _outlinedAction(
+          '结束后台会话',
+          Icons.link_off_rounded,
+          _endingSession ? null : _disconnect,
+          danger: true,
+        ),
+        ExpansionTile(
+          title: Text('扫描诊断', style: TextStyle(color: p.ink)),
+          tilePadding: EdgeInsets.zero,
+          children: [
+            _settingRow('阶段', phase),
+            _settingRow(
+              '已用时间',
+              '${(displayedElapsed / 1000).toStringAsFixed(1)} 秒',
+            ),
+            _settingRow('结果计数（含重复广播）', '${scan['resultCount'] ?? 0}'),
+            _settingRow('列表设备数', '${devices.length}'),
+            _settingRow('结束原因', '${scan['endReason'] ?? '尚未结束'}'),
+            _settingRow('蓝牙适配器', '${scan['adapterStatus'] ?? '未知'}'),
+            _settingRow('扫描错误类型', '${scan['errorType'] ?? '无'}'),
+            _settingRow(
+              'Android SDK',
+              '${blePermissionDiagnostics['sdkInt'] ?? '尚未读取'}',
+            ),
+            _settingRow(
+              '权限请求阶段',
+              '${blePermissionDiagnostics['phase'] ?? '尚未请求'}',
+            ),
+            _settingRow('扫描权限', '${blePermissionDiagnostics['bluetoothScan']}'),
+            _settingRow(
+              '连接权限',
+              '${blePermissionDiagnostics['bluetoothConnect']}',
+            ),
+            _settingRow(
+              '位置权限',
+              '${blePermissionDiagnostics['locationPermission']}',
+            ),
+            _settingRow(
+              '系统停止确认',
+              scan['stopConfirmed'] == true ? '已确认' : '未确认',
+            ),
+            _settingRow(
+              '快照新鲜度',
+              age == null
+                  ? '暂无有效快照'
+                  : age.inSeconds > 10
+                  ? '历史快照 · ${age.inSeconds} 秒前'
+                  : '最近快照 · ${age.inSeconds} 秒前',
+            ),
+            if (client.message != null) _settingRow('后台错误', client.message!),
+            if (_localError != null) _settingRow('界面错误', _localError!),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _settingsPage(Map<String, dynamic> state) {
+    final connected = state['connection'] == 'connected';
     return _page([
       _header('设置', '连接与设备', state),
       const SizedBox(height: 12),
@@ -959,10 +1203,8 @@ class _ControlShellState extends State<ControlShell>
       _settingRow(
         '当前设备',
         connected
-            ? '觉瞳 01'
-            : searching
-            ? '正在连接…'
-            : '未连接',
+            ? '${state['deviceId'] ?? '觉瞳'}'
+            : _connectionDescription(state),
       ),
       _divider(),
       if (connected) ...[
@@ -981,23 +1223,8 @@ class _ControlShellState extends State<ControlShell>
           '停止自动动作并释放控制。设备仍需用电源开关关闭。',
           style: TextStyle(color: p.muted, fontSize: 12),
         ),
-      ] else ...[
-        const SizedBox(height: 16),
-        Text(
-          searching ? '正在自动发现并连接觉瞳设备…' : '未发现设备，请确认设备已开启且手机蓝牙可用。',
-          style: TextStyle(color: p.muted, fontSize: 13),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: _outlinedAction(
-            '重新搜索',
-            Icons.bluetooth_searching,
-            busy || searching ? null : _discover,
-          ),
-        ),
-        TextButton(onPressed: _showPairingHelp, child: const Text('配对帮助')),
-      ],
+      ] else
+        _discoveryPanel(state),
       if (state['pairingNotice'] is String) ...[
         const SizedBox(height: 12),
         Text(
@@ -1092,7 +1319,6 @@ class _ControlShellState extends State<ControlShell>
                   state['maintenancePath'] == 'unknown'
               ? null
               : () => _run(() async {
-                  _automaticConnection = false;
                   await client.send('openLanWindow', {'useSavedNetwork': true});
                 }),
         ),
@@ -1165,7 +1391,6 @@ class _ControlShellState extends State<ControlShell>
                           state['maintenancePath'] == 'lan')
                   ? null
                   : () => _run(() async {
-                      _automaticConnection = false;
                       await client.send('openOtaWindow');
                     }),
             ),
