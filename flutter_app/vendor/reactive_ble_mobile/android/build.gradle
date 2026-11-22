@@ -1,0 +1,141 @@
+group 'com.signify.hue.flutterreactiveblelib'
+version '1.0-SNAPSHOT'
+
+buildscript {
+    ext.detekt_version = '1.23.0'
+    ext.kotlin_version = '2.4.10'
+    ext.junit_version = '5.11.4'
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:9.1.0'
+        classpath 'com.google.protobuf:protobuf-gradle-plugin:0.9.4'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "io.gitlab.arturbosch.detekt:detekt-gradle-plugin:$detekt_version"
+        classpath "de.mannodermaus.gradle.plugins:android-junit5:1.11.2.0"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'com.google.protobuf'
+apply plugin: "io.gitlab.arturbosch.detekt"
+apply plugin: "de.mannodermaus.android-junit5"
+
+android {
+    compileSdkVersion 37
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
+        main {
+            proto {
+                srcDir '../protos/'
+            }
+        }
+    }
+
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 37
+        consumerProguardFiles 'proguard-rules.txt', 'upstream/consumer-rules.pro'
+    }
+
+    namespace 'com.signify.hue.flutterreactiveble'
+
+    lint {
+        disable 'InvalidPackage'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+detekt {
+    version = detekt_version
+    input = files("src/main/kotlin")
+    dependencies {
+        detektPlugins "io.gitlab.arturbosch.detekt:detekt-formatting:$detekt_version"
+        detektPlugins "io.gitlab.arturbosch.detekt:detekt-rules-libraries:$detekt_version"
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.3'
+    }
+
+    generateProtoTasks {
+        all().each { task ->
+            task.builtins {
+                java {
+                    option "lite"
+                }
+            }
+        }
+    }
+}
+
+// Preserve all upstream bytecode except the four classes rebuilt from pinned
+// official 1.16.0 source. Exact AAR checksum is recorded in PATCH.md.
+def rxClassNames = ['ServiceDiscoveryManager', 'RxBleGattCallback', 'RxBleConnectionImpl']
+def rxOperations = ['ServiceDiscoveryOperation']
+tasks.register('satoriRxClasses', Jar) {
+    archiveFileName = 'rxandroidble-1.16.0-base.jar'
+    destinationDirectory = layout.buildDirectory.dir('satori-rx')
+    def aar = file('upstream/rxandroidble-1.16.0.aar')
+    inputs.file(aar)
+    doFirst {
+        def digest = java.security.MessageDigest.getInstance('SHA-256').digest(aar.bytes).encodeHex().toString()
+        if (digest != '903138c0d0d078d1c4aa00d7f62bd88acda54644a59cb8f6791c6d2129c73ea4') {
+            throw new GradleException('Pinned RxAndroidBle artifact checksum mismatch')
+        }
+    }
+    from({ zipTree(zipTree(aar).matching { include 'classes.jar' }.singleFile) }) {
+        exclude { element ->
+            def path = element.path
+            (rxClassNames.any { path == "com/polidea/rxandroidble2/internal/connection/${it}.class" || path.startsWith("com/polidea/rxandroidble2/internal/connection/${it}\$") }) ||
+            (rxOperations.any { path == "com/polidea/rxandroidble2/internal/operations/${it}.class" || path.startsWith("com/polidea/rxandroidble2/internal/operations/${it}\$") })
+        }
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    implementation files(tasks.named('satoriRxClasses'))
+    implementation 'io.reactivex.rxjava2:rxjava:2.2.17'
+    implementation 'androidx.annotation:annotation:1.1.0'
+    implementation 'com.jakewharton.rxrelay2:rxrelay:2.1.1'
+    implementation('com.polidea.rxandroidble2:dagger-library-shadow:1.16.0') { transitive = false }
+    implementation 'com.google.protobuf:protobuf-javalite:3.25.3'
+    implementation 'io.reactivex.rxjava2:rxkotlin:2.4.0'
+    implementation 'io.reactivex.rxjava2:rxandroid:2.1.1'
+
+    testImplementation "org.junit.jupiter:junit-jupiter-api:$junit_version"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:$junit_version"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    testImplementation "org.mockito:mockito-core:5.14.2"
+    testImplementation "com.google.truth:truth:1.4.4"
+}

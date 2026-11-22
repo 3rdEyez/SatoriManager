@@ -73,7 +73,51 @@ class Harness {
   }
 }
 
+class ChangedGattLink extends FakeBleLink implements BleGattInvalidationLink {
+  @override
+  bool gattDatabaseChanged = false;
+  bool failNextConnect = false;
+  @override
+  Future<void> connect(String id) async {
+    if (failNextConnect) {
+      failNextConnect = false;
+      throw StateError('synthetic reconnect failure');
+    }
+    await super.connect(id);
+  }
+}
+
 void main() {
+  test(
+    'Service Changed recovers a new session paused, even after a failed retry',
+    () async {
+      final link = ChangedGattLink();
+      final h = Harness(link: link);
+      addTearDown(h.close);
+      await h.connect();
+      h.engine.setAutoRotate(true);
+      h.engine.setAutoWink(true);
+      await h.flush();
+      final armCount = h.armCount;
+      link.gattDatabaseChanged = true;
+      link.failNextConnect = true;
+      await link.disconnect();
+      await h.flush();
+      expect(h.engine.outputAuthorized, false);
+      expect(h.engine.autoRotate, false);
+      expect(h.engine.autoWink, false);
+      final targetCount = h.targets.length;
+      h.timers.last.fire();
+      await h.flush();
+      h.timers.last.fire();
+      await h.flush();
+      expect(h.engine.connection, 'connected');
+      expect(h.engine.outputAuthorized, false);
+      expect(h.engine.explicitlyPaused, true);
+      expect(h.armCount, armCount);
+      expect(h.targets.length, targetCount);
+    },
+  );
   test(
     'ending filming cancels all motion, releases once, and never reconnects',
     () async {

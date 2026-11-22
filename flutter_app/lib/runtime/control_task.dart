@@ -23,6 +23,7 @@ class ControlTask extends TaskHandler {
   ReactiveBleLink? link;
   StreamSubscription<Map<String, Object?>>? subscription;
   StreamSubscription<void>? scanChanges;
+  StreamSubscription<void>? gattChanges;
   int _scanRequestGeneration = 0;
   final List<Map> queued = [];
   final ClientGenerationGuard _clientGuard = ClientGenerationGuard();
@@ -49,6 +50,7 @@ class ControlTask extends TaskHandler {
           'stopConfirmed': true,
           'canStart': true,
         },
+    'gattDiagnostics': link?.gattDiagnostics,
     'discovered': discovered.values.toList(),
     'favorites': favorites,
   };
@@ -87,6 +89,7 @@ class ControlTask extends TaskHandler {
         searching = adapter.isScanning;
         publish();
       });
+      gattChanges = adapter.gattChanges.listen((_) => publish());
       final active = ControlEngine(DeviceSession(adapter), actions);
       engine = active;
       subscription = active.updates.listen((_) => publish());
@@ -377,6 +380,7 @@ class ControlTask extends TaskHandler {
     ++_scanRequestGeneration;
     await link?.stopScan(reason: 'destroyed');
     await scanChanges?.cancel();
+    await gattChanges?.cancel();
     await subscription?.cancel();
     await engine?.dispose();
     await link?.dispose();

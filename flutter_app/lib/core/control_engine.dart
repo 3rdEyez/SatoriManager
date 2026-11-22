@@ -158,14 +158,23 @@ class ControlEngine {
         _notify();
         return;
       }
+      final link = session.link;
+      final databaseChanged =
+          link is BleGattInvalidationLink &&
+          (link as BleGattInvalidationLink).gattDatabaseChanged;
       connection = 'reconnecting';
-      error = '连接中断，动作已取消';
+      if (databaseChanged) explicitlyPaused = true;
+      error = databaseChanged ? '蓝牙服务已变化，动作已取消；重新发现后保持暂停' : '连接中断，动作已取消';
       _reconnectAttempt = 0;
       // A disconnect creates one recovery auto-start intent. Every retry in
       // this backoff round shares it, so a pause can revoke it permanently.
       final autoStartGeneration = ++_autoStartGeneration;
-      _autoStartPending = !_otaResumeBlocked;
-      _scheduleReconnect(_connectionGeneration, autoStartGeneration);
+      _autoStartPending = !_otaResumeBlocked && !databaseChanged;
+      _scheduleReconnect(
+        _connectionGeneration,
+        autoStartGeneration,
+        allowAutoStart: !databaseChanged,
+      );
     }
     _notify();
   }
@@ -573,7 +582,11 @@ class ControlEngine {
     _notify();
   }
 
-  void _scheduleReconnect(int generation, int autoStartGeneration) {
+  void _scheduleReconnect(
+    int generation,
+    int autoStartGeneration, {
+    bool allowAutoStart = true,
+  }) {
     const delays = [1, 2, 4, 8];
     if (_reconnectAttempt == delays.length) {
       connection = 'failed';
@@ -606,9 +619,13 @@ class ControlEngine {
           if (autoStartGeneration == _autoStartGeneration) {
             // A failed attempt may not have reached ARM. Keep the intent for
             // the next retry unless pause has advanced the generation.
-            _autoStartPending = !_otaResumeBlocked;
+            _autoStartPending = !_otaResumeBlocked && allowAutoStart;
           }
-          _scheduleReconnect(generation, autoStartGeneration);
+          _scheduleReconnect(
+            generation,
+            autoStartGeneration,
+            allowAutoStart: allowAutoStart,
+          );
         }
       } finally {
         if (generation == _connectionGeneration) _connecting = false;

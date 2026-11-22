@@ -105,7 +105,7 @@ void main() {
       }
 
       await show({'otaSupported': false});
-      expect(find.text('当前固件不支持无线升级窗口。'), findsOneWidget);
+      expect(find.textContaining('当前蓝牙服务列表未发现升级窗口特征'), findsOneWidget);
       expect(find.text('开启升级窗口'), findsNothing);
       await show({
         'otaSupported': true,

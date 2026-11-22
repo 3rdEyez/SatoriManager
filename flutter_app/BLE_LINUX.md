@@ -24,6 +24,21 @@ range 500–2500. The tool HALTs after a target is acknowledged:
 dart run tool/ble_probe.dart --device <address> --arm --target=<CH1>,<CH2>,<CH3>
 ```
 
+For repeated paused hardware acceptance, use a known, already paired device:
+
+```sh
+dart run tool/ble_acceptance_probe.dart <address>
+```
+
+This makes three connections, holds each paused session for twelve seconds,
+checks advancing keepalive acknowledgments and state reads, then releases and
+disconnects before the next connection. A transport command whitelist rejects
+ARM, target and configuration writes. JSON output includes failed phases and
+command counts without frame values or session tokens. Stop other clients'
+background connections first: the peripheral supports one central at a time.
+Linux success validates BlueZ and the shared protocol/session implementation;
+it does not validate Android's native GATT cache or the phone's radio stack.
+
 Use only a mechanically verified safe start and channel limits. The protocol
 range is an input encoding and is not a mechanical safety range.
 

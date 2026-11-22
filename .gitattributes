@@ -1,0 +1,2 @@
+# Keep vendored upstream text intact, including its original whitespace.
+flutter_app/vendor/** -whitespace

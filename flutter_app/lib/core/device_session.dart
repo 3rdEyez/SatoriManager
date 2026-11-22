@@ -8,6 +8,11 @@ import 'lan_window.dart';
 
 enum BleLinkState { disconnected, connecting, connected }
 
+/// A changed GATT database requires a new table and keeps control paused.
+abstract interface class BleGattInvalidationLink {
+  bool get gattDatabaseChanged;
+}
+
 /// Small transport contract. Scanning, pairing and platform GATT setup live in
 /// the concrete adapter; this class owns the protocol and its single writer.
 class BleCharacteristicAbsent implements Exception {

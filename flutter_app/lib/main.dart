@@ -1286,7 +1286,7 @@ class _ControlShellState extends State<ControlShell>
         state['lanSupported'] == true
             ? _lanStatusText(state['lanWindow'] as Map?)
             : state['lanSupported'] == false
-            ? '此设备固件不支持局域网配网维护，需升级固件；不会发送网络配置。'
+            ? '当前蓝牙服务列表未发现配网特征；固件功能或服务发现结果待核验，不会发送网络配置。'
             : '局域网维护状态未确认，控制保持暂停；请重新连接确认。',
         style: TextStyle(color: p.muted, fontSize: 13),
       ),
@@ -1361,7 +1361,7 @@ class _ControlShellState extends State<ControlShell>
         state['otaSupported'] == null
             ? '备用热点维护状态未确认，控制保持暂停；请重新连接确认。'
             : state['otaSupported'] == false
-            ? '当前固件不支持无线升级窗口。'
+            ? '当前蓝牙服务列表未发现升级窗口特征；请查看 GATT 发现诊断。'
             : state['otaWindow']?['result'] == 2
             ? '签名升级尚未就绪，暂不能开启窗口。'
             : '主动开启限时窗口后，手动连接设备 Wi-Fi，用任意浏览器上传 .sota 签名包。',
@@ -1472,6 +1472,7 @@ class _ControlShellState extends State<ControlShell>
           _settingRow('应用 BLE 协议', '${state['appProtocol'] ?? '未知'}'),
           _settingRow('设备 BLE 协议', '${state['deviceProtocol'] ?? '未知'}'),
           _settingRow('控制状态', controlStatus(state)),
+          _gattDiagnostics(state),
           _settingRow(
             '设备电量',
             state['battery'] == null ? '未知（未采样）' : '${state['battery']}%',
@@ -1517,6 +1518,62 @@ class _ControlShellState extends State<ControlShell>
         ],
       ),
     ]);
+  }
+
+  Widget _gattDiagnostics(Map<String, dynamic> state) {
+    final diagnostic = state['gattDiagnostics'];
+    if (diagnostic is! Map) return _settingRow('GATT 发现', '尚无记录');
+    final phase = switch (diagnostic['phase']) {
+      'discovering' => '正在显式发现服务',
+      'completed' => '发现完成（平台返回列表）',
+      'missingService' => '返回列表未发现觉瞳服务，能力尚未确认',
+      'failed' =>
+        diagnostic['failure'] == 'timeout' ? '发现超时，能力尚未确认' : '发现失败，能力尚未确认',
+      _ => '尚未发现',
+    };
+    String presence(String suffix) => switch (diagnostic[suffix]) {
+      true => '已发现',
+      false => '列表缺失',
+      _ => '未确认',
+    };
+    final services = diagnostic['services'];
+    final native = diagnostic['native'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _settingRow('GATT 发现', phase),
+        if (native is Map && native.isNotEmpty) ...[
+          _settingRow(
+            'Android 原生发现',
+            '${native['phase']} / 调用接受：${native['accepted']} / 回调：${native['callbackReceived']} / 状态：${native['status'] ?? '—'}',
+          ),
+          _settingRow(
+            '原生开始 / 结束',
+            '${native['startedAtMs'] ?? '—'} / ${native['completedAtMs'] ?? '—'}',
+          ),
+        ],
+        _settingRow(
+          '诊断 / OTA / 配网',
+          '0006：${presence('0006')}\n0007：${presence('0007')}\n0008：${presence('0008')}',
+        ),
+        if (diagnostic['completedAt'] != null)
+          _settingRow('发现时间', '${diagnostic['completedAt']}'),
+        Text(
+          '以下仅含平台返回的 UUID，不含特征值、密码或绑定密钥。重新连接会再次发现服务，但不清除系统缓存。',
+          style: TextStyle(color: p.muted, fontSize: 12),
+        ),
+        if (services is List)
+          for (final service in services)
+            if (service is Map)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: SelectableText(
+                  '服务 ${service['uuid']}\n${(service['characteristics'] as List? ?? []).join('\n')}',
+                  style: TextStyle(color: p.muted, fontSize: 12),
+                ),
+              ),
+      ],
+    );
   }
 
   Widget _bottomNav() => Container(

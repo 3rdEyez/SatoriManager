@@ -54,23 +54,64 @@ void main() {
       expect(find.text('当前固件不支持无线升级窗口。'), findsNothing);
     },
   );
-  testWidgets('confirmed missing capability remains unsupported', (
-    tester,
-  ) async {
-    final client = ControlClient.preview({
-      'connection': 'connected',
-      'sessionPhase': 'readyPaused',
-      'lanSupported': false,
-      'otaSupported': false,
-      'outputAuthorized': false,
-      'discovered': <Object>[],
-    });
-    await tester.pumpWidget(SatoriApp(previewClient: client));
-    await tester.tap(find.text('设置'));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('备用设备热点（手动选择）'), 250);
-    expect(find.textContaining('此设备固件不支持局域网'), findsOneWidget);
-    expect(find.text('当前固件不支持无线升级窗口。'), findsOneWidget);
-    expect(find.textContaining('维护状态未确认'), findsNothing);
-  });
+  testWidgets(
+    'missing discovery features do not assert firmware upgrade required',
+    (tester) async {
+      final client = ControlClient.preview({
+        'connection': 'connected',
+        'sessionPhase': 'readyPaused',
+        'lanSupported': false,
+        'otaSupported': false,
+        'outputAuthorized': false,
+        'discovered': <Object>[],
+      });
+      await tester.pumpWidget(SatoriApp(previewClient: client));
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('备用设备热点（手动选择）'), 250);
+      expect(find.textContaining('当前蓝牙服务列表未发现配网特征'), findsOneWidget);
+      expect(find.textContaining('需升级固件'), findsNothing);
+      expect(find.textContaining('当前蓝牙服务列表未发现升级窗口特征'), findsOneWidget);
+      expect(find.textContaining('维护状态未确认'), findsNothing);
+    },
+  );
+  testWidgets(
+    'device details show UUID discovery evidence without secret values',
+    (tester) async {
+      final client = ControlClient.preview({
+        'connection': 'connected',
+        'sessionPhase': 'readyPaused',
+        'outputAuthorized': false,
+        'discovered': <Object>[],
+        'gattDiagnostics': {
+          'phase': 'completed',
+          '0006': false,
+          '0007': false,
+          '0008': true,
+          'services': [
+            {
+              'uuid': 'synthetic-service-uuid',
+              'characteristics': ['synthetic-characteristic-uuid'],
+            },
+          ],
+        },
+      });
+      await tester.pumpWidget(SatoriApp(previewClient: client));
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('设备详情'), 250);
+      await tester.ensureVisible(find.text('设备详情'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('设备详情'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('GATT 发现'));
+      await tester.pumpAndSettle();
+      expect(find.text('发现完成（平台返回列表）'), findsOneWidget);
+      expect(find.textContaining('0008：已发现'), findsOneWidget);
+      expect(
+        find.textContaining('synthetic-characteristic-uuid'),
+        findsOneWidget,
+      );
+    },
+  );
 }

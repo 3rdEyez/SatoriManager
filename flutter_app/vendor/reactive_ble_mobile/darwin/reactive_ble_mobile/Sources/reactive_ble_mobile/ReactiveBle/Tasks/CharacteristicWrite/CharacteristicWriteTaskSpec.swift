@@ -1,0 +1,28 @@
+#if os(iOS)
+  import Flutter
+#elseif os(macOS)
+  import FlutterMacOS
+#endif
+
+struct CharacteristicWriteTaskSpec: PeripheralTaskSpec {
+
+    typealias Key = CharacteristicInstance
+
+    struct Params {
+
+        let value: Data
+    }
+
+    enum Stage {
+
+        case writing
+    }
+
+    typealias Result = Error?
+
+    static let tag = "WRITE"
+
+    static func isMember(_ key: Key, of group: PeripheralID) -> Bool {
+        return key.peripheralID == group
+    }
+}
